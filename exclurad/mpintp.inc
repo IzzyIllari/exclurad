@@ -1,3 +1,4 @@
+  
 c 	Multipole and Helicity Amplitudes
 
       integer wave_L		! max pi-N ang. mom. in table
@@ -67,7 +68,22 @@ C 	  PARAMETER( NVAR1  = 77,   NVAR2 = 26 )	! Q2,W
 c      PARAMETER( NVAR1  = 77 , NVAR2 = 61 )	! Q2,W 
 C      PARAMETER( NVAR1  = 16 , NVAR2 = 26 )	! Q2,W 
 C      PARAMETER( NVAR1  = 81 , NVAR2 = 92 )	! Q2,W
-      PARAMETER( NVAR1  = 101 , NVAR2 = 93 )	! Q2,W ! Q2, W maid 07
+
+c!!!Victor!!!   PARAMETER( NVAR1  = 101 , NVAR2 = 93 ! Q2,W ! Q2, W maid07
+c      PARAMETER( NVAR1  = 101 , NVAR2 = 53 )	! Q2,W ! Q2, W EtaMAID2000
+
+c!!!Victor!!! Parameters for EtaMAID2000:
+c      PARAMETER( NVAR1  = 51 )	! Q2 = 0 - 5 GeV² with step 0.1 GeV²
+c      PARAMETER( NVAR1  = 61 )	! Q2 = 0 - 6 GeV² with step 0.1 GeV²
+c      PARAMETER( NVAR1  = 121)	! Q2 = 0 - 6 GeV² with step 0.05 GeV²
+
+c      PARAMETER( NVAR2 = 53 )	! W = 1.4856 - 2 GeV with step 10 MeV
+c      PARAMETER( NVAR2 = 104 )	! W = 1.4856 - 2 GeV with step 5 MeV
+
+c!!!Victor!!! Parameters for EtaMAID2023:
+      PARAMETER( NVAR1 = 101 )	! Q2 = 0 - 5 GeV² with step 0.05 GeV²
+c-(1th: W=1485.6 MeV) + 51(1500-2000 MeV, dW=10MeV) + 40(2100-6000 MeV, dW=100 MeV) =92
+      PARAMETER( NVAR2 = 92 )	! W = 1.4856 - 6 GeV with step 100 MeV
 
 
 C Vectors of Kinematic Variables
@@ -212,20 +228,4 @@ CEV Second derivatives for cubic spline:
      &                   D2SF49,D2SF50,D2SF51,D2SF52,D2SF53,D2SF54,
      &                   D2SF55,D2SF56,D2SF57,D2SF58,D2SF59,D2SF60,
      &                   D2SF61,D2SF62
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

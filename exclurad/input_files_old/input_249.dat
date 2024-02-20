@@ -1,0 +1,15 @@
+3       !  1: AO 2: maid98  3: maid2000
+0       !  0: Full, 1: Factorizable and Leading log
+6.53    !  bmom - lepton momentum
+0.0     !  tmom - momentum per nucleon
+1       !  lepton - 1 electron, 2 muon
+1       !  ivec - detected hadron (1) p, (2) pi+
+0.166   !  vcut - cut on inelasticity (0.) if no cut, negative -- v
+
+10 ! no. of points
+1.8350 1.8350 1.8350 1.8350 1.8350 1.8350 1.8350 1.8350 1.8350 1.8350 ! W values
+1.698 1.698 1.698 1.698 1.698 1.698 1.698 1.698 1.698 1.698 ! Q^2 values
+-0.25 -0.25 -0.25 -0.25 -0.25 -0.25 -0.25 -0.25 -0.25 -0.25 ! Cos(Theta) values
+18. 54. 90. 126. 162. 198. 234. 270. 306. 342. ! phi values
+
+0error detected by nag library routine   d01fce - ifail =     2

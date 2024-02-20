@@ -26,8 +26,11 @@ c
       data wnet/1.5d0/
      .	   q2net/0.7d0,1d0,1.3d0,1.5d0,1.8d0,2.0d0/
      .	   ctnet/-.1d0,-.3d0/
+*      data ipolmax/1/
       data ipolmax/2/
-
+*ipolmax = 1 only unpolarized case
+*ipolmax = 2 polarized case
+*ipolmax for only unpol will save 50% of time
 	 open(unit=22,file='radcor.dat',status='unknown')
 	 open(unit=41,file='radsigpl.dat',status='unknown')
 	 open(unit=42,file='radsigmi.dat',status='unknown')
@@ -174,17 +177,26 @@ c      write(*,'(8f8.5)') extai1-1.,alpha/pi*(deltavr+sum),tai/sib
 
 
 	 write(27,'(5f6.2,5F8.3)')
+*         write(27, "(*(F12.6,:,','))")
      .	 w,q2,eps_d,cscm_input(i),phicm_input(i),as,asb,dd
-	 write(41,'(5f6.2,2g11.3)')
+*	 write(41,'(5f6.2,2g11.3)')
+         write(41, "(*(F12.6,:,','))")
      . 	 w,q2,eps_d,cscm_input(i),phicm_input(i)
      .	,sibar(1)+sibar(2),sigar(1)+sigar(2)
 	 write(42,'(5f6.2,2g11.3)')
+*         write(42, "(*(F12.6,:,','))")
      .	 w,q2,eps_d,cscm_input(i),phicm_input(i)
      .	,sibar(1)-sibar(2),sigar(1)-sigar(2)
        endif
 
-       write(28,'(5f6.2,5F8.3)')
-     .	   e1,w,q2,cscm_input(i),phicm_input(i),ddcr,dd
+*       write(28,'(5f6.3,5F8.4)')
+*     .	   e1,w,q2,cscm_input(i),phicm_input(i),ddcr,dd
+*       write(28, "(*(F12.6,:,','))")
+*     .     e1,w,q2,cscm_input(i),phicm_input(i),ddcr,dd
+*       write(28,'(5f6.2,5F8.3)')
+       write(28, "(*(F16.10,:,','))")
+     .   e1,w,q2,cscm_input(i),phicm_input(i),sigar(1)/sibar(1),
+     .   sibar(1),as,asb,dd
 
       enddo
       close(22)
@@ -199,8 +211,8 @@ c      write(*,'(8f8.5)') extai1-1.,alpha/pi*(deltavr+sum),tai/sib
       common/cmp/pi,alpha,amp,amp2,ap,ap2,aml2,amu2,amh2,barn
       parameter(ncases=2)
       dimension amhad(ncases),amunm(ncases)
-      data amhad/0.938272d0,0.13957d0/
-      data amunm/0.13957d0,0.938272d0/
+      data amhad/0.938272d0,0.54786d0/
+      data amunm/0.54786d0,0.938272d0/
 
       if(lepton.eq.1)aml2=.261112d-6
       if(lepton.eq.2)aml2=.111637d-1
@@ -405,7 +417,8 @@ c	WRITE(*,*)EPS012,eee12
 
 
       ma=100000
-      ot=1d-2
+      ot=1d-3
+*      ot=1d-4
 
       rere=0.
       do iph=1,3
@@ -1433,8 +1446,8 @@ c      DATA THETA_D15 /  0. /
 c      DATA SQ2        /1.41421  /
       DATA PI	      /3.14159	/
       DATA XMPROT     /.938	/
-      DATA XMPIP      /.1395	/
-      DATA XMPI0      /.1349	/
+      DATA XMPIP      /.54786	/
+      DATA XMPI0      /.54786	/
 c      DATA XMETA      /.5488	 /
 
 
@@ -1910,7 +1923,7 @@ c      RBD33_1700=(RE2M+RM2M)/sqrt(0.15)
        real vflag
        integer i,j
 
-       DATA XMPIP/0.139563/,XMPI0/0.1349630/,XMP/0.93827/
+       DATA XMPIP/0.54786/,XMPI0/0.54786/,XMP/0.93827/
        DATA UP,UN/1.793,-1.913/
        DATA EC/.302862/,GN/13.5/
        DATA ETA/1.,1.,-1.,1.,-1.,-1./,EPS/1.,1.,-1./
@@ -2413,8 +2426,8 @@ c      COMMON /GOCOM/TEST,GON
       DATA SQ2	      /1.41421	/
       DATA PI	      /3.14159	/
       DATA XMPROT     /.938	/
-      DATA XMPIP      /.1395	/
-      DATA XMPI0      /.1349	/
+      DATA XMPIP      /.54786	/
+      DATA XMPI0      /.54786	/
 c      DATA XMETA      /.5488	 /
 
 
@@ -4427,7 +4440,7 @@ C Begin reading the file.
 	 do jvar2=1,nvar2      ! W
 	   read(iunit,FMT=15,err=1000) dummyX,	var2(jvar2),
      1				       dummyY,	var1(jvar1)   ! w,q2
- 15	   format(A8,f4.2,A7,f7.5)
+ 15	   format(A6,f6.4,A8,f4.2)
 	   if (jvar1.eq.1)     var1tmp1=var1(jvar1)
 	   if (jvar1.eq.nvar1) var1tmp2=var1(jvar1)
 	   if (jvar2.eq.1)     var2tmp1=var2(jvar2)
