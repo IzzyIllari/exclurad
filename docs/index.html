@@ -4,26 +4,33 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EXCLURAD Interactive RC Explorer</title>
+
+  <!-- Site styles -->
   <link rel="stylesheet" href="./assets/styles.css" />
-  <!-- Plotly -->
+
+  <!-- Plotly (global UMD) -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
   <div class="page">
+    <!-- =================== HEADER =================== -->
     <header>
       <h1>EXCLURAD Interactive RC Explorer</h1>
-      <p class="sub">Choose axes and overlay; snap fixed kinematics to values present in the dataset.</p>
+      <p class="sub">
+        Choose axes and overlay; snap fixed kinematics to values present in the dataset.
+      </p>
     </header>
 
+    <!-- =================== CONTROLS =================== -->
     <section class="controls">
       <div class="row">
-        <label>y:</label>
+        <label for="y">y:</label>
         <select id="y">
-          <option value="delta_xsec_ratio">δ = σ_obs/σ₀</option>
+          <option value="delta_xsec_ratio">δ = σ<sub>obs</sub>/σ₀</option>
           <option value="A_ratio">A<sub>RC</sub> / A<sub>Born</sub></option>
         </select>
 
-        <label>x:</label>
+        <label for="x">x:</label>
         <select id="x">
           <option value="W">W</option>
           <option value="Q2">Q²</option>
@@ -31,7 +38,7 @@
           <option value="phi">φ* [deg]</option>
         </select>
 
-        <label>overlay:</label>
+        <label for="overlay">overlay:</label>
         <select id="overlay">
           <option value="Q2">Q²</option>
           <option value="W">W</option>
@@ -40,50 +47,52 @@
         </select>
 
         <label class="spacer"></label>
-        <label>dataset:</label>
+
+        <label for="dataset">dataset:</label>
         <select id="dataset">
           <option value="sample">sample (fast)</option>
-          <option value="full">full (larger)</option>
+          <option value="full" selected>full (larger)</option>
         </select>
 
-        <button id="update" class="btn">Update</button>
+        <button id="update" class="btn" type="button">Update</button>
       </div>
 
+      <!-- Sliders (their enabled/disabled state is controlled by app.js) -->
       <div class="row sliders">
-        <div class="slider-block">
-          <div class="sl-label">W [GeV]: <span id="W_val"></span></div>
+        <div class="slider-block" id="W_block">
+          <div class="sl-label">W [GeV]: <span id="W_val">–</span></div>
           <input id="W" type="range" min="0" max="0" step="1" list="W_ticks" />
           <datalist id="W_ticks"></datalist>
         </div>
 
-        <div class="slider-block">
-          <div class="sl-label">Q² [GeV²]: <span id="Q2_val"></span></div>
+        <div class="slider-block" id="Q2_block">
+          <div class="sl-label">Q² [GeV²]: <span id="Q2_val">–</span></div>
           <input id="Q2" type="range" min="0" max="0" step="1" list="Q2_ticks" />
           <datalist id="Q2_ticks"></datalist>
         </div>
 
-        <div class="slider-block">
-          <div class="sl-label">cosθ*: <span id="cos_val"></span></div>
+        <div class="slider-block" id="cos_block">
+          <div class="sl-label">cosθ*: <span id="cos_val">–</span></div>
           <input id="cos" type="range" min="0" max="0" step="1" list="cos_ticks" />
           <datalist id="cos_ticks"></datalist>
         </div>
 
-        <div class="slider-block">
-          <div class="sl-label">φ* [deg]: <span id="phi_val"></span></div>
+        <div class="slider-block" id="phi_block">
+          <div class="sl-label">φ* [deg]: <span id="phi_val">–</span></div>
           <input id="phi" type="range" min="0" max="0" step="1" list="phi_ticks" />
           <datalist id="phi_ticks"></datalist>
         </div>
       </div>
     </section>
 
+    <!-- =================== PLOT AREA =================== -->
     <section class="plot-wrap">
-      <div id="plot"></div>
+      <div id="plot" aria-live="polite"></div>
       <div id="meta" class="meta"></div>
     </section>
   </div>
 
-  <!-- Arrow (ESM) + app -->
+  <!-- Your app (ES modules). app.js imports Apache Arrow ESM internally. -->
   <script type="module" src="./assets/app.js"></script>
 </body>
 </html>
-

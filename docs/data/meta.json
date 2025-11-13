@@ -1,4 +1,9 @@
 {
+  "counts": {
+    "dedup_rows": 264980,
+    "web_rows": 264980,
+    "sample_rows": 50000
+  },
   "columns": {
     "w": "W [GeV]",
     "q2": "Q^2 [GeV^2]",
@@ -7,23 +12,15 @@
     "w_r": "W rounded (4dp)",
     "q2_r": "Q^2 rounded (4dp)",
     "ct_r": "cos(theta*) rounded (3dp)",
-    "delta_xsec_ratio": "delta = sigma_obs / sigma_0 (cross-section RC)",
-    "A_born": "Born BSA (unitless)",
-    "A_rc": "RC BSA (unitless)",
-    "A_ratio": "A_rc / A_born",
-    "dd": "dd [%] (dataset-dependent)",
-    "dd_ratio": "1 + dd/100",
-    "source_label": "first|second|skim"
-  },
-  "counts": {
-    "dedup_rows": 264980,
-    "web_rows": 264980,
-    "sample_rows": 50000
-  },
-  "notes": {
-    "dd_semantics": "Detected automatically at load; if 'asymmetry', dd_ratio ~ A_ratio; if 'cross-section', dd_ratio ~ delta_xsec_ratio.",
-    "angles": "phi_deg normalized to [0,360), cos(theta*) as cscm_input",
-    "key": "(w_r, q2_r, ct_r, phi_deg) unique per row",
-    "provenance": "source_label preserves original root directory"
+    "delta_xsec_ratio": "delta = sigma_obs/sigma_0",
+    "A_born": "Born BSA",
+    "A_rc": "RC BSA",
+    "A_ratio": "A_rc/A_born",
+    "dd": "dd [%]",
+    "dd_ratio": "1+dd/100",
+    "source_label": "first|second|skim",
+    "ok_kin": "valid kinematics",
+    "ok_asym": "valid asymmetry",
+    "ok_delta": "valid delta"
   }
 }

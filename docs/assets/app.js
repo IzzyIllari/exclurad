@@ -1,310 +1,408 @@
-// --------- Data + UI wiring for EXCLURAD explorer (Arrow + Plotly) ---------
-import { tableFromIPC } from "https://cdn.jsdelivr.net/npm/apache-arrow@15.0.2/+esm";
+/* assets/app.js
+ * EXCLURAD web viewer – interactive Plotly controls
+ * - Reads uncompressed Feather with Apache Arrow
+ * - Lets user pick x, y, overlay
+ * - Shows only the two fixed-kinematics sliders (disables x & overlay sliders)
+ * - Color-blind friendly palette + dash cycle
+ * - Proper MathJax labels for y-axis
+ */
 
-// Colorblind-friendly palette (Okabe-Ito) + dashes + markers
-const COLORS = ["#0072B2","#D55E00","#009E73","#CC79A7","#E69F00","#56B4E9","#000000","#F0E442"];
-const DASHES = ["solid","dash","dot","dashdot","longdash","longdashdot","solid","dash"];
-const SYMBOLS = ["circle","triangle-up","square","diamond","x","star","cross","hexagram"];
+/* -----------------------
+   Config / constants
+------------------------ */
+const DATA_URL_FULL   = 'data/exclurad_eta_web.feather';
+const DATA_URL_SAMPLE = 'data/exclurad_eta_web_sample.feather';
+const META_URL        = 'data/meta.json';
 
-const VARCOL = { W: "w_r", Q2: "q2_r", cos: "ct_r", phi: "phi_deg" };
+const OKABE_ITO = [
+  '#0072B2','#D55E00','#009E73','#CC79A7',
+  '#E69F00','#56B4E9','#000000','#F0E442'
+];
+const DASHES = ['solid','dash','dot','dashdot','longdash','longdashdot','solid','dash'];
 
-const DATA_FILES = {
-  sample: "./data/exclurad_eta_web_sample.feather",
-  full:   "./data/exclurad_eta_web.feather",  // make sure you committed this if you choose 'full'
-};
+// Mapping between UI variable names and dataframe columns
+const VARCOL = { W: 'w_r', Q2: 'q2_r', cos: 'ct_r', phi: 'phi_deg' };
+const VARLABEL = { W: 'W [GeV]', Q2: 'Q² [GeV²]', cos: 'cosθ*', phi: 'φ* [deg]' };
 
-const PLOT_CONFIG = { responsive: true, displaylogo: false };
+// y-variable choices
+const Y_OPTIONS = [
+  { key: 'delta_xsec_ratio', label: 'δ = σ_obs/σ₀', math: '\\delta = \\sigma_{\\mathrm{obs}}/\\sigma_{0}' },
+  { key: 'A_ratio',          label: 'A_RC/A_Born',  math: 'A_{\\mathrm{RC}}/A_{\\mathrm{Born}}' }
+];
 
-// Helpers
-const fmt = (v, p=3) => (typeof v === "number" ? Number(v).toFixed(p) : v);
-const approxEq = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
+// elements (filled in later)
+const els = {};
 
-// Read Feather -> Arrow Table
-async function loadFeather(url) {
-  const resp = await fetch(url + "?v=" + Date.now()); // cache-bust on deploy updates
-  if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
-  const buf = new Uint8Array(await resp.arrayBuffer());
-  return tableFromIPC(buf);
-}
-
-function toArray(table, name) {
-  const col = table.getChild(name);
-  if (!col) throw new Error(`Missing column: ${name}`);
-  return col.toArray(); // TypedArray / JS array depending on type
-}
-
-function uniqueSorted(arr) {
-  const set = new Set(arr);
-  const out = Array.from(set).filter(Number.isFinite);
-  out.sort((a,b) => a - b);
+// utility: convert Arrow Vector to JS array (with type checks)
+function toArray(vec, name) {
+  if (!vec) throw new Error(`Missing column: ${name}`);
+  const out = [];
+  for (let i = 0; i < vec.length; i++) out.push(vec.get(i));
   return out;
 }
 
-function buildDiscreteSlider(values, inputEl, ticksEl, labelEl, decimals) {
-  // values: sorted numeric array
-  inputEl.min = 0;
-  inputEl.max = Math.max(0, values.length - 1);
-  inputEl.step = 1;
-  // datalist ticks (sparingly)
-  ticksEl.innerHTML = "";
-  const N = values.length;
-  const every = Math.ceil(N / 10); // up to ~10 ticks
-  for (let i = 0; i < N; i += every) {
-    const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.label = decimals != null ? Number(values[i]).toFixed(decimals) : String(values[i]);
-    ticksEl.appendChild(opt);
+// Discrete slider support: we map slider to integer index into a sorted unique array
+function makeDiscreteSlider(values, inputEl, valueEl, format = (v)=>v.toString()) {
+  const arr = Array.from(new Set(values.filter(Number.isFinite))).sort((a,b)=>a-b);
+  if (!arr.length) {
+    inputEl.disabled = true;
+    inputEl.classList.add('disabled');
+    valueEl.textContent = '—';
+    return { get: ()=>NaN, set: ()=>{}, values: [] };
   }
-  const setFromIndex = (idx) => {
-    idx = Math.max(0, Math.min(values.length - 1, Number(idx)));
-    inputEl.value = String(idx);
-    labelEl.textContent = decimals != null ? Number(values[idx]).toFixed(decimals) : String(values[idx]);
-  };
-  const getValue = () => values[Number(inputEl.value)];
+  inputEl.min = 0;
+  inputEl.max = arr.length - 1;
+  inputEl.step = 1;
+  inputEl.value = 0;
+  inputEl.disabled = false;
+  inputEl.classList.remove('disabled');
+  valueEl.textContent = format(arr[0]);
 
-  // initialize at median-ish
-  setFromIndex(Math.floor(values.length / 2));
-
-  inputEl.addEventListener("input", () => setFromIndex(inputEl.value));
-  return { getValue, setFromIndex, values };
+  function setFromValue(v) {
+    // snap to nearest
+    let idx = 0;
+    let best = Math.abs(arr[0] - v);
+    for (let i = 1; i < arr.length; i++) {
+      const d = Math.abs(arr[i] - v);
+      if (d < best) { best = d; idx = i; }
+    }
+    inputEl.value = idx;
+    valueEl.textContent = format(arr[idx]);
+  }
+  function get() {
+    const idx = parseInt(inputEl.value, 10);
+    const v = arr[Math.max(0, Math.min(arr.length - 1, idx))];
+    valueEl.textContent = format(v);
+    return v;
+  }
+  return { get, set: setFromValue, values: arr };
 }
 
-function groupCoverage(data, ycol, xvar, fixed, overlayKey, minPoints=4) {
-  // Count distinct x points per overlay value for the filtered 'base'
-  const xKey = VARCOL[xvar];
-  const N = data.ok_kin.length;
-  const mask = new Array(N).fill(true);
+/* -----------------------
+   Load data (Arrow Feather)
+------------------------ */
+import { tableFromIPC } from "https://cdn.jsdelivr.net/npm/apache-arrow@15.0.2/+esm";
 
-  // base validity (kin + appropriate y)
-  for (let i = 0; i < N; i++) {
-    mask[i] = data.ok_kin[i] && (
-      (ycol === "delta_xsec_ratio" ? (data.ok_delta[i] && Number.isFinite(data.delta_xsec_ratio[i]))
-                                   : (data.ok_asym[i]  && Number.isFinite(data.A_ratio[i])))
-    );
+let TABLE = null;
+let AX_UNIQUE = {}; // { W:[...], Q2:[...], cos:[...], phi:[...] }
+let META = null;
+
+async function loadTable(which='full') {
+  const url = which === 'full' ? DATA_URL_FULL : DATA_URL_SAMPLE;
+  const buff = await fetch(url).then(r => {
+    if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
+    return r.arrayBuffer();
+  });
+  // Must be UNCOMPRESSED feather; otherwise Arrow-in-browser will throw
+  const table = tableFromIPC(buff);
+  // sanity columns
+  ['ok_kin','ok_asym','ok_delta','w_r','q2_r','ct_r','phi_deg','delta_xsec_ratio','A_ratio'].forEach(c => {
+    if (!table.getChild(c)) throw new Error(`Missing column: ${c}`);
+  });
+  return table;
+}
+
+async function materialize(which='full') {
+  TABLE = await loadTable(which);
+  META  = await fetch(META_URL).then(r => r.json()).catch(() => ({}));
+
+  // Precompute unique sorted axis values
+  AX_UNIQUE = {
+    W:   uniqSorted(toArray(TABLE.getChild('w_r'), 'w_r')),
+    Q2:  uniqSorted(toArray(TABLE.getChild('q2_r'),'q2_r')),
+    cos: uniqSorted(toArray(TABLE.getChild('ct_r'),'ct_r')),
+    phi: uniqSorted(toArray(TABLE.getChild('phi_deg'),'phi_deg'))
+  };
+
+  // Build discrete sliders (indices, not continuous floats)
+  buildSliders();
+
+  // Render first time
+  render();
+}
+
+function uniqSorted(arr) {
+  return Array.from(new Set(arr.filter(Number.isFinite))).sort((a,b)=>a-b);
+}
+
+/* -----------------------
+   UI wiring
+------------------------ */
+function el(id) { return document.getElementById(id); }
+
+function initElements() {
+  els.ySel       = el('ySel');
+  els.xSel       = el('xSel');
+  els.overlaySel = el('overlaySel');
+  els.datasetSel = el('datasetSel');
+  els.updateBtn  = el('updateBtn');
+
+  // slider inputs + readouts
+  els.Win   = el('W_in');   els.Wval   = el('W_val');
+  els.Q2in  = el('Q2_in');  els.Q2val  = el('Q2_val');
+  els.cosin = el('cos_in'); els.cosval = el('cos_val');
+  els.phiin = el('phi_in'); els.phival = el('phi_val');
+
+  els.figDiv = el('figure');
+  els.rowsFooter = el('rowsFooter');
+
+  // y options
+  els.ySel.innerHTML = '';
+  for (const yo of Y_OPTIONS) {
+    const opt = document.createElement('option');
+    opt.value = yo.key; opt.textContent = yo.label;
+    els.ySel.appendChild(opt);
   }
+}
 
-  // fixed (two of the remaining variables)
-  for (const [k, v] of Object.entries(fixed)) {
-    const arr = data[k];
-    const want = Number(v);
-    if (k === "phi_deg") {
-      for (let i = 0; i < N; i++) mask[i] = mask[i] && approxEq(arr[i], want, 1e-3);
+let SLIDERS = {}; // { W:{get,set,values}, Q2:{...}, cos:{...}, phi:{...} }
+
+function buildSliders() {
+  // formats
+  const fW  = (v)=>v.toFixed(3);
+  const fQ2 = (v)=>v.toFixed(3);
+  const fC  = (v)=> (Math.abs(v)<1e-6 ? '0.000' : v.toFixed(3));
+  const fP  = (v)=>v.toFixed(0);
+
+  SLIDERS.W   = makeDiscreteSlider(AX_UNIQUE.W,   els.Win,   els.Wval,   fW);
+  SLIDERS.Q2  = makeDiscreteSlider(AX_UNIQUE.Q2,  els.Q2in,  els.Q2val,  fQ2);
+  SLIDERS.cos = makeDiscreteSlider(AX_UNIQUE.cos, els.cosin, els.cosval, fC);
+  SLIDERS.phi = makeDiscreteSlider(AX_UNIQUE.phi, els.phiin, els.phival, fP);
+
+  // default positions roughly mid-range
+  // (leave defaults as whatever sliders were initialized to)
+
+  // Hook change events for render
+  [els.Win, els.Q2in, els.cosin, els.phiin].forEach(inp => {
+    inp.addEventListener('input', () => render(false));
+  });
+}
+
+/* Disable/hide sliders for the selected x and overlay variables */
+function updateSliderEnableState() {
+  const x = els.xSel.value;
+  const ov = els.overlaySel.value;
+  const fixed = new Set(['W','Q2','cos','phi']);
+  fixed.delete(x); fixed.delete(ov);
+  const enable = { W:false, Q2:false, cos:false, phi:false };
+  for (const k of fixed) enable[k] = true;
+
+  function setState(varName, inputEl, labelEl) {
+    inputEl.disabled = !enable[varName];
+    if (enable[varName]) {
+      inputEl.classList.remove('disabled');
+      labelEl.classList.remove('disabled');
     } else {
-      for (let i = 0; i < N; i++) mask[i] = mask[i] && approxEq(arr[i], want, 1e-6);
+      inputEl.classList.add('disabled');
+      labelEl.classList.add('disabled');
     }
   }
 
-  // distinct x by overlay value
-  const map = new Map(); // overlayVal -> Set of x
+  setState('W',   els.Win,   el('W_lbl'));
+  setState('Q2',  els.Q2in,  el('Q2_lbl'));
+  setState('cos', els.cosin, el('cos_lbl'));
+  setState('phi', els.phiin, el('phi_lbl'));
+}
+
+// Keep overlay dropdown from matching x
+function refreshOverlayOptions() {
+  const x = els.xSel.value;
+  const keep = ['W','Q2','cos','phi'].filter(v => v !== x);
+  const current = els.overlaySel.value;
+  els.overlaySel.innerHTML = '';
+  for (const v of keep) {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = v;
+    els.overlaySel.appendChild(opt);
+  }
+  if (keep.includes(current)) els.overlaySel.value = current;
+}
+
+/* -----------------------
+   Plot + data selection
+------------------------ */
+function currentSelection() {
+  // pick y
+  const ykey = els.ySel.value; // delta_xsec_ratio | A_ratio
+
+  // base filter: ok_kin + ok_delta/asym
+  const okKin   = TABLE.getChild('ok_kin');
+  const okDelta = TABLE.getChild('ok_delta');
+  const okAsym  = TABLE.getChild('ok_asym');
+
+  const yOk = (ykey === 'delta_xsec_ratio') ? okDelta : okAsym;
+
+  // fixed variables are those NOT equal to x or overlay
+  const x = els.xSel.value;           // 'W'|'Q2'|'cos'|'phi'
+  const overlay = els.overlaySel.value;
+  const fixed = ['W','Q2','cos','phi'].filter(v => v !== x && v !== overlay);
+
+  // fixed values from sliders (discrete)
+  const fixVals = {};
+  for (const v of fixed) fixVals[v] = SLIDERS[v].get();
+
+  // Build arrays
+  const cols = {
+    x:  VARCOL[x],
+    ov: VARCOL[overlay],
+    W:  'w_r',  Q2: 'q2_r',  cos: 'ct_r',  phi: 'phi_deg',
+    y:  ykey
+  };
+
+  const N = TABLE.length;
+  const xa = toArray(TABLE.getChild(cols.x), 'xcol');
+  const ova= toArray(TABLE.getChild(cols.ov), 'ovcol');
+  const ya = toArray(TABLE.getChild(cols.y), 'ycol');
+  const Wa = toArray(TABLE.getChild('w_r'), 'w_r');
+  const Q2a= toArray(TABLE.getChild('q2_r'),'q2_r');
+  const Ca = toArray(TABLE.getChild('ct_r'), 'ct_r');
+  const Pa = toArray(TABLE.getChild('phi_deg'),'phi_deg');
+
+  // mask by ok + fixed matches
+  const mask = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const ok = okKin.get(i) && yOk.get(i);
+    if (!ok) { mask[i] = false; continue; }
+    // test fixed equality; phi is rounded to 0.5 deg bins in UI, but data are exact -> use numeric equality on stored (rounded) columns
+    let keep = true;
+    for (const v of fixed) {
+      const col = v==='W' ? Wa : v==='Q2' ? Q2a : v==='cos' ? Ca : Pa;
+      if (col[i] !== fixVals[v]) { keep = false; break; }
+    }
+    mask[i] = keep;
+  }
+
+  // collect unique overlay values present in the masked set, sorted by coverage (count of unique x points)
+  const byOv = new Map(); // ovVal -> Map(xVal -> yVal)
   for (let i = 0; i < N; i++) {
     if (!mask[i]) continue;
-    const ov = data[overlayKey][i];
-    const xv = data[xKey][i];
-    if (!Number.isFinite(ov) || !Number.isFinite(xv)) continue;
-    if (!map.has(ov)) map.set(ov, new Set());
-    map.get(ov).add(xv);
+    const ovVal = ova[i];
+    const xVal  = xa[i];
+    const yVal  = ya[i];
+    if (!Number.isFinite(ovVal) || !Number.isFinite(xVal) || !Number.isFinite(yVal)) continue;
+    if (!byOv.has(ovVal)) byOv.set(ovVal, new Map());
+    byOv.get(ovVal).set(xVal, yVal);
   }
-  const rows = [];
-  for (const [ov, set] of map.entries()) rows.push({ ov, n: set.size });
-  rows.sort((a,b) => (b.n - a.n) || (a.ov - b.ov));
-  return rows.filter(r => r.n >= minPoints);
-}
-
-function buildCurves(data, ycol, xvar, overlayKey, fixed, overlayList, minPoints=4) {
-  const xKey = VARCOL[xvar];
-  const N = data.ok_kin.length;
+  // turn to sorted traces by coverage then numeric ov
   const traces = [];
-  const allY = [];
-
-  for (let idx = 0; idx < overlayList.length; idx++) {
-    const ov = overlayList[idx];
-    // filter rows for this curve
-    const pts = [];
-    for (let i = 0; i < N; i++) {
-      if (!data.ok_kin[i]) continue;
-      if (overlayKey === "phi_deg") { if (!approxEq(data[overlayKey][i], ov, 1e-3)) continue; }
-      else                           { if (!approxEq(data[overlayKey][i], ov, 1e-6)) continue; }
-
-      // fixed
-      let ok = true;
-      for (const [k, v0] of Object.entries(fixed)) {
-        const v = Number(v0);
-        if (k === "phi_deg") { if (!approxEq(data[k][i], v, 1e-3)) { ok = false; break; } }
-        else                 { if (!approxEq(data[k][i], v, 1e-6)) { ok = false; break; } }
-      }
-      if (!ok) continue;
-
-      const xv = data[xKey][i];
-      const yv = (ycol === "delta_xsec_ratio") ? data.delta_xsec_ratio[i] : data.A_ratio[i];
-      const yOK = (ycol === "delta_xsec_ratio") ? (data.ok_delta[i] && Number.isFinite(yv))
-                                                : (data.ok_asym[i]  && Number.isFinite(yv));
-      if (!Number.isFinite(xv) || !yOK) continue;
-      pts.push([xv, yv]);
-    }
-    if (pts.length < minPoints) continue;
-    pts.sort((a,b) => a[0] - b[0]);
-
-    const color = COLORS[idx % COLORS.length];
-    const dash  = DASHES[idx % DASHES.length];
-    const sym   = SYMBOLS[idx % SYMBOLS.length];
-
-    traces.push({
-      x: pts.map(p => p[0]),
-      y: pts.map(p => p[1]),
-      mode: "lines+markers",
-      name: `${overlayKey === "w_r" ? "W" : overlayKey === "q2_r" ? "Q²" : overlayKey === "ct_r" ? "cosθ*" : "φ*"}=${overlayKey==="w_r" ? fmt(ov,3) :
-             overlayKey==="phi_deg" ? fmt(ov,0) : fmt(ov,3)}`,
-      line: { width: 2, color, dash },
-      marker: { size: 6, color, symbol: sym }
-    });
-    allY.push(...pts.map(p => p[1]));
+  for (const [ovVal, mp] of byOv.entries()) {
+    const xs = Array.from(mp.keys()).sort((a,b)=>a-b);
+    const ys = xs.map(xv => mp.get(xv));
+    traces.push({ ovVal, xs, ys, n: xs.length });
   }
-  return { traces, allY };
+  traces.sort((a,b) => (b.n - a.n) || (a.ovVal - b.ovVal));
+
+  return { traces, x, overlay, fixed, fixVals, ykey };
 }
 
-async function main() {
-  // Elements
-  const selY   = document.getElementById("y");
-  const selX   = document.getElementById("x");
-  const selOv  = document.getElementById("overlay");
-  const selSet = document.getElementById("dataset");
-  const btnUpd = document.getElementById("update");
-  const metaDiv = document.getElementById("meta");
+function yLabelMath(ykey) {
+  const found = Y_OPTIONS.find(o => o.key === ykey);
+  return found ? found.math : '';
+}
 
-  // Sliders
-  const W = document.getElementById("W"),     Wticks = document.getElementById("W_ticks"),     Wval = document.getElementById("W_val");
-  const Q2= document.getElementById("Q2"),    Q2ticks= document.getElementById("Q2_ticks"),    Q2val= document.getElementById("Q2_val");
-  const CS= document.getElementById("cos"),   CSticks= document.getElementById("cos_ticks"),   CSval= document.getElementById("cos_val");
-  const PH= document.getElementById("phi"),   PHticks= document.getElementById("phi_ticks"),   PHval= document.getElementById("phi_val");
-
-  // Load meta (optional)
+function render(reflowTitle=true) {
   try {
-    const m = await (await fetch("./data/meta.json")).json();
-    metaDiv.textContent = `rows (dedup): ${m.counts.web_rows.toLocaleString()} • sample: ${m.counts.sample_rows.toLocaleString()}`;
-  } catch { /* non-fatal */ }
+    updateSliderEnableState();
 
-  // Load table (default = sample)
-  let table = await loadFeather(DATA_FILES[selSet.value]);
+    const { traces, x, overlay, fixed, fixVals, ykey } = currentSelection();
 
-  // Arrow -> column arrays
-  function materialize(table) {
-    return {
-      // rounded keys & raw angles
-      w_r: toArray(table, "w_r"),
-      q2_r: toArray(table, "q2_r"),
-      ct_r: toArray(table, "ct_r"),
-      phi_deg: toArray(table, "phi_deg"),
-      // y columns
-      delta_xsec_ratio: toArray(table, "delta_xsec_ratio"),
-      A_ratio: toArray(table, "A_ratio"),
-      // valids
-      ok_kin:  toArray(table, "ok_kin"),
-      ok_delta:toArray(table, "ok_delta"),
-      ok_asym: toArray(table, "ok_asym"),
-    };
-  }
-  let data = materialize(table);
-
-  // Slider domains from data (discrete)
-  const valsW   = uniqueSorted(Array.from(data.w_r));
-  const valsQ2  = uniqueSorted(Array.from(data.q2_r));
-  const valsCos = uniqueSorted(Array.from(data.ct_r));
-  const valsPhi = uniqueSorted(Array.from(data.phi_deg));
-
-  const sW   = buildDiscreteSlider(valsW,   W,  Wticks,  Wval, 3);
-  const sQ2  = buildDiscreteSlider(valsQ2,  Q2, Q2ticks, Q2val,3);
-  const sCos = buildDiscreteSlider(valsCos, CS, CSticks, CSval,3);
-  const sPhi = buildDiscreteSlider(valsPhi, PH, PHticks, PHval,0);
-
-  async function maybeReloadDataset() {
-    const url = DATA_FILES[selSet.value];
-    const currentURL = table?.schema?.metadata?.get("source") || "";
-    if (!url || url === currentURL) return; // minimal check
-    table = await loadFeather(url);
-    data = materialize(table);
-  }
-
-  async function draw() {
-    await maybeReloadDataset();
-
-    const xvar = selX.value;           // 'W'|'Q2'|'cos'|'phi'
-    const ycol = selY.value;           // 'delta_xsec_ratio'|'A_ratio'
-    const overlay = selOv.value;
-
-    if (overlay === xvar) {
-      alert("Overlay variable must differ from x-axis.");
-      return;
-    }
-
-    // fixed variables (the other two)
-    const allVars = ["W","Q2","cos","phi"];
-    const fixedVars = allVars.filter(v => v !== xvar && v !== overlay);
-    const fixed = {};
-    for (const v of fixedVars) {
-      if (v === "W")   fixed["w_r"]   = sW.getValue();
-      if (v === "Q2")  fixed["q2_r"]  = sQ2.getValue();
-      if (v === "cos") fixed["ct_r"]  = sCos.getValue();
-      if (v === "phi") fixed["phi_deg"]= sPhi.getValue();
-    }
-
-    // pick overlay values with best coverage
-    const overlayKey = VARCOL[overlay];
-    const cover = groupCoverage(data, ycol, xvar, fixed, overlayKey, 4);
+    // plotly traces
+    const pltTraces = [];
     const maxTraces = 8;
-    const picked = cover.slice(0, maxTraces).map(r => r.ov).sort((a,b) => a - b);
+    for (let i = 0; i < Math.min(maxTraces, traces.length); i++) {
+      const t = traces[i];
+      pltTraces.push({
+        x: t.xs,
+        y: t.ys,
+        mode: 'lines+markers',
+        name: overlay + '=' + (overlay==='W' ? t.ovVal.toFixed(3)
+                                   : overlay==='Q2' ? t.ovVal.toFixed(3)
+                                   : overlay==='cos'? t.ovVal.toFixed(3)
+                                   : t.ovVal.toFixed(0)),
+        line: { width: 2, color: OKABE_ITO[i % OKABE_ITO.length], dash: DASHES[i % DASHES.length] },
+        marker: { size: 6, color: OKABE_ITO[i % OKABE_ITO.length] }
+      });
+    }
 
-    // build traces
-    const { traces, allY } = buildCurves(data, ycol, xvar, overlayKey, fixed, picked, 4);
+    // title text (plain, but with MathJax y-axis)
+    const fixedTxt = fixed.map(v => {
+      const val = fixVals[v];
+      if (v === 'phi') return `φ*=${val.toFixed(0)}°`;
+      if (v === 'cos') return `cosθ*=${val.toFixed(3)}`;
+      if (v === 'W')   return `W=${val.toFixed(3)} GeV`;
+      if (v === 'Q2')  return `Q²=${val.toFixed(3)} GeV²`;
+      return `${v}=${val}`;
+    }).join(', ');
 
-    // labels
-    const xlab = {W:"W [GeV]", Q2:"Q² [GeV²]", cos:"cosθ*", phi:"φ* [deg]"}[xvar];
-    const ylab = (ycol === "delta_xsec_ratio") ? "δ = σ_obs/σ₀" : "A_RC / A_Born";
-
-    const fixedLabel = Object.entries(fixed).map(([k,v]) => {
-      if (k === "w_r") return `W=${fmt(v,3)} GeV`;
-      if (k === "q2_r") return `Q²=${fmt(v,3)} GeV²`;
-      if (k === "ct_r") return `cosθ*=${fmt(v,3)}`;
-      if (k === "phi_deg") return `φ*=${fmt(v,0)}°`;
-    }).join(", ");
+    const title = `${Y_OPTIONS.find(o=>o.key===ykey).label} vs ${VARLABEL[x]}  |  fixed: ${fixedTxt}`;
 
     const layout = {
-      title: `${ylab} vs ${xlab}  |  fixed: ${fixedLabel}`,
-      xaxis: { title: xlab, zeroline: false },
-      yaxis: { title: ylab, zeroline: false },
-      legend: { orientation: "h", y: 1.1, x: 0 },
-      margin: { t: 80, r: 20, b: 60, l: 60 },
-      height: 640,
-      template: "plotly_white"
+      template: 'plotly_white',
+      title: { text: title, x: 0, xanchor: 'left', pad: { b: 24 } },  // <-- more space under the title
+      margin: { t: 80, r: 30, b: 50, l: 60 },
+      xaxis: { title: VARLABEL[x], zeroline: false },
+      yaxis: { title: { text: '$' + yLabelMath(ykey) + '$' } },       // MathJax
+      legend: {
+        orientation: 'h',
+        yanchor: 'top',
+        y: 0.96,                 // sit below the (now padded) title
+        xanchor: 'left',
+        x: 0
+      }
     };
 
-    // harmonize y-range a bit
-    if (allY.length) {
-      const finite = allY.filter(Number.isFinite);
-      if (finite.length) {
-        const lo = Math.min(...finite), hi = Math.max(...finite);
-        const pad = 0.08 * Math.max(hi - lo, 1e-3);
-        layout.yaxis.range = [lo - pad, hi + pad];
-      }
-    }
+    Plotly.react(els.figDiv, pltTraces, layout, {responsive: true, displaylogo: false});
 
-    Plotly.newPlot("plot", traces, layout, PLOT_CONFIG);
+    // footer counts
+    const dedupRows = META?.counts?.dedup_rows ?? 0;
+    const sampleRows = META?.counts?.sample_rows ?? 0;
+    els.rowsFooter.textContent = `rows (dedup): ${dedupRows.toLocaleString()} • sample: ${sampleRows.toLocaleString()}`;
+
+  } catch (e) {
+    console.error(e);
+    els.figDiv.innerHTML = `<div style="color:#b00020">Error: ${e.message}</div>`;
   }
-
-  // initial draw + events
-  btnUpd.addEventListener("click", draw);
-  // update overlay choices when x changes so they can't be equal
-  selX.addEventListener("change", () => {
-    if (selOv.value === selX.value) {
-      selOv.value = ["W","Q2","cos","phi"].find(v => v !== selX.value);
-    }
-  });
-
-  await draw();
 }
 
-main().catch(err => {
-  console.error(err);
-  const div = document.getElementById("plot");
-  if (div) div.textContent = String(err);
-});
+/* -----------------------
+   Boot
+------------------------ */
+function main() {
+  initElements();
 
+  // dataset switch
+  els.datasetSel.addEventListener('change', () => {
+    materialize(els.datasetSel.value.includes('full') ? 'full' : 'sample')
+      .catch(e => {
+        console.error(e);
+        els.figDiv.innerHTML = `<div style="color:#b00020">Error: ${e.message}</div>`;
+      });
+  });
+
+  // x changes → keep overlay ≠ x, and refresh slider state
+  els.xSel.addEventListener('change', () => {
+    refreshOverlayOptions();
+    updateSliderEnableState();
+    render();
+  });
+
+  // overlay changes → just update slider state and plot
+  els.overlaySel.addEventListener('change', () => {
+    updateSliderEnableState();
+    render();
+  });
+
+  els.ySel.addEventListener('change', () => render());
+  els.updateBtn.addEventListener('click', () => render());
+
+  // initial
+  refreshOverlayOptions();
+  updateSliderEnableState();
+  materialize(els.datasetSel.value.includes('full') ? 'full' : 'sample')
+    .catch(e => {
+      console.error(e);
+      els.figDiv.innerHTML = `<div style="color:#b00020">Error: ${e.message}</div>`;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', main);
