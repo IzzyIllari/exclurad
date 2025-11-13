@@ -1,135 +1,35 @@
-/* ===============================
-   EXCLURAD Interactive RC Explorer
-   Page styles (no framework)
-   =============================== */
-
 :root {
   --maxw: 1200px;
-  --text: #111;
-  --muted: #555;
-  --accent: #0b5cff;
 }
 
 html, body {
-  margin: 0;
-  padding: 0;
-  color: var(--text);
+  margin: 0; padding: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  color: #111;
 }
 
-.page {
-  margin: 16px auto;
-  max-width: var(--maxw);
-  padding: 0 12px;
-}
+.page { margin: 16px auto; max-width: var(--maxw); padding: 0 10px; }
 
-/* ---------- Header ---------- */
-header h1 {
-  margin: 0 0 6px 0;
-  font-size: 1.45rem;
-  line-height: 1.25;
-}
+header h1 { margin: 0 0 6px 0; font-size: 1.4rem; }
+header .sub { margin: 0 0 12px 0; color: #555; }
 
-header .sub {
-  margin: 0 0 14px 0;
-  color: var(--muted);
-}
+.controls .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.controls label { font-weight: 600; }
+.controls .spacer { flex: 1 1 auto; min-width: 24px; }
+.controls select, .btn { padding: 6px 10px; font-size: 0.95rem; }
 
-/* ---------- Controls row ---------- */
-.controls .row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
+.sliders { margin-top: 8px; gap: 18px; }
+.slider-block { min-width: 260px; flex: 1 1 260px; }
+.slider-block input[type="range"] { width: 100%; }
+.sl-label { margin-bottom: 4px; font-size: 0.9rem; color: #333; }
+.slider-block.disabled { opacity: 0.45; }
 
-.controls label {
-  font-weight: 600;
-}
+.plot-wrap { margin-top: 8px; }
+#plot { height: 680px; }              /* comfortable height */
+.meta { margin: 6px 0 0 0; color: #555; font-size: 0.85rem; }
 
-.controls .spacer {
-  flex: 1 1 auto;
-}
-
-.controls select,
-.btn {
-  padding: 6px 10px;
-  font-size: 0.95rem;
-  border-radius: 6px;
-}
-
-.controls select {
-  border: 1px solid #ccc;
-  background: #fff;
-}
-
-/* ---------- Action button ---------- */
-.btn {
-  background: var(--accent);
-  border: none;
-  color: #fff;
-  cursor: pointer;
-}
-
+.btn { background: #0b5cff; border: none; color: #fff; border-radius: 6px; cursor: pointer; }
 .btn:hover { filter: brightness(0.95); }
-.btn:active { filter: brightness(0.9); }
 
-/* ---------- Sliders ---------- */
-.sliders { 
-  margin-top: 10px; 
-  gap: 18px; 
-}
-
-.slider-block { 
-  min-width: 260px; 
-  flex: 1; 
-}
-
-.slider-block input[type="range"] { 
-  width: 100%; 
-}
-
-.sl-label { 
-  margin-bottom: 4px; 
-  font-size: 0.9rem; 
-  color: #333; 
-}
-
-/* Disabled look (app.js toggles the disabled attribute and .disabled class) */
-.slider-block.disabled .sl-label { 
-  color: #999; 
-}
-.slider-block input[type="range"]:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ---------- Plot + meta ---------- */
-.plot-wrap { 
-  margin-top: 10px; 
-}
-
-/* A comfortable default height. Plotly will fill this block. */
-#plot { 
-  height: 660px; 
-}
-
-.meta { 
-  margin: 6px 0 0 0; 
-  color: var(--muted); 
-  font-size: 0.85rem; 
-}
-
-/* Give the Plotly title/legend a bit more vertical room.
-   (We also bump the top margin via layout in app.js.) */
-#plot .svg-container { 
-  margin-top: 4px; 
-}
-
-/* ---------- Small screens ---------- */
-@media (max-width: 900px) {
-  .controls .row { row-gap: 8px; }
-  #plot { height: 520px; }
-}
+/* Give the plot extra space on top so legend has room below the title */
+.js-plotly-plot .plotly .main-svg { overflow: visible; }

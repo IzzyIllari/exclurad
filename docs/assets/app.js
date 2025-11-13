@@ -1,408 +1,319 @@
-/* assets/app.js
- * EXCLURAD web viewer – interactive Plotly controls
- * - Reads uncompressed Feather with Apache Arrow
- * - Lets user pick x, y, overlay
- * - Shows only the two fixed-kinematics sliders (disables x & overlay sliders)
- * - Color-blind friendly palette + dash cycle
- * - Proper MathJax labels for y-axis
- */
+// EXCLURAD Interactive RC Explorer (browser-side)
+// - Reads uncompressed Feather via Apache Arrow (ESM)
+// - Builds multi-curve Plotly trace with color-blind palette + dashes
+// - Sliders snap to values present in the dataset
+// - Disables only the sliders that correspond to x and overlay
 
-/* -----------------------
-   Config / constants
------------------------- */
-const DATA_URL_FULL   = 'data/exclurad_eta_web.feather';
-const DATA_URL_SAMPLE = 'data/exclurad_eta_web_sample.feather';
-const META_URL        = 'data/meta.json';
+import * as arrow from "https://cdn.jsdelivr.net/npm/apache-arrow@14.0.2/+esm";
 
-const OKABE_ITO = [
-  '#0072B2','#D55E00','#009E73','#CC79A7',
-  '#E69F00','#56B4E9','#000000','#F0E442'
-];
-const DASHES = ['solid','dash','dot','dashdot','longdash','longdashdot','solid','dash'];
+// ---------- Configuration ----------
+const PATHS = {
+  meta:  './data/meta.json',
+  full:  './data/exclurad_eta_web.feather',        // uncompressed
+  sample:'./data/exclurad_eta_web_sample.feather'  // uncompressed
+};
 
-// Mapping between UI variable names and dataframe columns
 const VARCOL = { W: 'w_r', Q2: 'q2_r', cos: 'ct_r', phi: 'phi_deg' };
-const VARLABEL = { W: 'W [GeV]', Q2: 'Q² [GeV²]', cos: 'cosθ*', phi: 'φ* [deg]' };
+const LABELS = { W: 'W [GeV]', Q2: 'Q² [GeV²]', cos: 'cosθ*', phi: 'φ* [deg]' };
 
-// y-variable choices
-const Y_OPTIONS = [
-  { key: 'delta_xsec_ratio', label: 'δ = σ_obs/σ₀', math: '\\delta = \\sigma_{\\mathrm{obs}}/\\sigma_{0}' },
-  { key: 'A_ratio',          label: 'A_RC/A_Born',  math: 'A_{\\mathrm{RC}}/A_{\\mathrm{Born}}' }
-];
+// Okabe–Ito palette + distinct dashes (color-blind friendly)
+const COLORS = ["#0072B2","#D55E00","#009E73","#CC79A7","#E69F00","#56B4E9","#000000","#F0E442"];
+const DASHES = ["solid","dash","dot","dashdot","longdash","longdashdot","solid","dash"];
 
-// elements (filled in later)
-const els = {};
+// ---------- Helpers ----------
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d=3) => Number.isFinite(v) ? v.toFixed(d) : "–";
+const uniqueSorted = (arr) => Array.from(new Set(arr)).sort((a,b)=>a-b);
 
-// utility: convert Arrow Vector to JS array (with type checks)
-function toArray(vec, name) {
-  if (!vec) throw new Error(`Missing column: ${name}`);
-  const out = [];
-  for (let i = 0; i < vec.length; i++) out.push(vec.get(i));
-  return out;
+function setSliderFromValues(id, values, decimals=3) {
+  const slider = $(id);
+  slider.min = 0;
+  slider.max = Math.max(0, values.length - 1);
+  slider.step = 1;
+  // Build sparse ticks
+  const dl = $(`${id}_ticks`);
+  dl.innerHTML = "";
+  const K = Math.min(10, values.length);
+  for (let t=0; t<K; t++){
+    const j = Math.round(t*(values.length-1)/(K-1));
+    const opt = document.createElement('option');
+    opt.value = j;
+    opt.label = fmt(values[j], id==='W'?3: (id==='phi'?0:3));
+    dl.appendChild(opt);
+  }
 }
 
-// Discrete slider support: we map slider to integer index into a sorted unique array
-function makeDiscreteSlider(values, inputEl, valueEl, format = (v)=>v.toString()) {
-  const arr = Array.from(new Set(values.filter(Number.isFinite))).sort((a,b)=>a-b);
-  if (!arr.length) {
-    inputEl.disabled = true;
-    inputEl.classList.add('disabled');
-    valueEl.textContent = '—';
-    return { get: ()=>NaN, set: ()=>{}, values: [] };
-  }
-  inputEl.min = 0;
-  inputEl.max = arr.length - 1;
-  inputEl.step = 1;
-  inputEl.value = 0;
-  inputEl.disabled = false;
-  inputEl.classList.remove('disabled');
-  valueEl.textContent = format(arr[0]);
-
-  function setFromValue(v) {
-    // snap to nearest
-    let idx = 0;
-    let best = Math.abs(arr[0] - v);
-    for (let i = 1; i < arr.length; i++) {
-      const d = Math.abs(arr[i] - v);
-      if (d < best) { best = d; idx = i; }
-    }
-    inputEl.value = idx;
-    valueEl.textContent = format(arr[idx]);
-  }
-  function get() {
-    const idx = parseInt(inputEl.value, 10);
-    const v = arr[Math.max(0, Math.min(arr.length - 1, idx))];
-    valueEl.textContent = format(v);
-    return v;
-  }
-  return { get, set: setFromValue, values: arr };
+function setSliderValue(id, values, atIndex) {
+  const slider = $(id);
+  const lbl = $(`${id}_val`);
+  const j = Math.min(Math.max(0, atIndex|0), values.length-1);
+  slider.value = String(j);
+  const decimals = (id==='W') ? 3 : (id==='phi' ? 0 : 3);
+  lbl.textContent = values.length ? fmt(values[j], decimals) : "–";
+  return j;
 }
 
-/* -----------------------
-   Load data (Arrow Feather)
------------------------- */
-import { tableFromIPC } from "https://cdn.jsdelivr.net/npm/apache-arrow@15.0.2/+esm";
-
-let TABLE = null;
-let AX_UNIQUE = {}; // { W:[...], Q2:[...], cos:[...], phi:[...] }
-let META = null;
-
-async function loadTable(which='full') {
-  const url = which === 'full' ? DATA_URL_FULL : DATA_URL_SAMPLE;
-  const buff = await fetch(url).then(r => {
-    if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
-    return r.arrayBuffer();
-  });
-  // Must be UNCOMPRESSED feather; otherwise Arrow-in-browser will throw
-  const table = tableFromIPC(buff);
-  // sanity columns
-  ['ok_kin','ok_asym','ok_delta','w_r','q2_r','ct_r','phi_deg','delta_xsec_ratio','A_ratio'].forEach(c => {
-    if (!table.getChild(c)) throw new Error(`Missing column: ${c}`);
-  });
-  return table;
+function readSliderValue(id, values) {
+  const slider = $(id);
+  const j = Math.min(Math.max(0, parseInt(slider.value||"0",10)), Math.max(0, values.length-1));
+  return values.length ? values[j] : NaN;
 }
 
-async function materialize(which='full') {
-  TABLE = await loadTable(which);
-  META  = await fetch(META_URL).then(r => r.json()).catch(() => ({}));
+function toggleDisabled(which, disabled) {
+  const blk = $(`blk-${which}`);
+  const slider = $(which);
+  slider.disabled = !!disabled;
+  blk.classList.toggle('disabled', !!disabled);
+}
 
-  // Precompute unique sorted axis values
-  AX_UNIQUE = {
-    W:   uniqSorted(toArray(TABLE.getChild('w_r'), 'w_r')),
-    Q2:  uniqSorted(toArray(TABLE.getChild('q2_r'),'q2_r')),
-    cos: uniqSorted(toArray(TABLE.getChild('ct_r'),'ct_r')),
-    phi: uniqSorted(toArray(TABLE.getChild('phi_deg'),'phi_deg'))
+function yAxisLabel(key) {
+  if (key === 'delta_xsec_ratio') return 'δ = σ<sub>obs</sub>/σ<sub>0</sub>';
+  return 'A<sub>RC</sub> / A<sub>Born</sub>';
+}
+
+// ---------- Data holder ----------
+const state = {
+  table: null,
+  cols: {},
+  vals: { W:[], Q2:[], cos:[], phi:[] },
+  chosen: { x:'W', overlay:'Q2', y:'delta_xsec_ratio', dataset:'full' }
+};
+
+// Convert an Arrow table column to a JS typed array
+function colToArray(tbl, name) {
+  const v = (tbl.getChild && tbl.getChild(name)) || (tbl.getColumn && tbl.getColumn(name));
+  if (!v) throw new Error(`Missing column: ${name}`);
+  return v.toArray();
+}
+
+async function loadFeather(kind) {
+  const url = PATHS[kind];
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Fetch failed: ${url} (${resp.status})`);
+  const buf = await resp.arrayBuffer();
+  // Some servers serve as ArrayBuffer; Arrow accepts Uint8Array
+  const table = arrow.tableFromIPC(new Uint8Array(buf));
+
+  // Required columns
+  const req = ['w_r','q2_r','ct_r','phi_deg','ok_kin','ok_delta','ok_asym','delta_xsec_ratio','A_ratio'];
+  for (const c of req) {
+    const has = (table.schema.fields || []).some(f => f.name === c);
+    if (!has) throw new Error(`Missing column: ${c}`);
+  }
+
+  state.table = table;
+  state.cols = {
+    w_r:  colToArray(table, 'w_r'),
+    q2_r: colToArray(table, 'q2_r'),
+    ct_r: colToArray(table, 'ct_r'),
+    phi:  colToArray(table, 'phi_deg'),
+    ok_kin:   Array.from(colToArray(table, 'ok_kin'),  x => !!x),
+    ok_delta: Array.from(colToArray(table, 'ok_delta'),x => !!x),
+    ok_asym:  Array.from(colToArray(table, 'ok_asym'), x => !!x),
+    delta: colToArray(table, 'delta_xsec_ratio'),
+    A_ratio: colToArray(table, 'A_ratio')
   };
 
-  // Build discrete sliders (indices, not continuous floats)
-  buildSliders();
-
-  // Render first time
-  render();
+  // Unique, sorted slider values
+  state.vals.W   = uniqueSorted(Array.from(state.cols.w_r));
+  state.vals.Q2  = uniqueSorted(Array.from(state.cols.q2_r));
+  state.vals.cos = uniqueSorted(Array.from(state.cols.ct_r));
+  state.vals.phi = uniqueSorted(Array.from(state.cols.phi));
 }
 
-function uniqSorted(arr) {
-  return Array.from(new Set(arr.filter(Number.isFinite))).sort((a,b)=>a-b);
-}
-
-/* -----------------------
-   UI wiring
------------------------- */
-function el(id) { return document.getElementById(id); }
-
-function initElements() {
-  els.ySel       = el('ySel');
-  els.xSel       = el('xSel');
-  els.overlaySel = el('overlaySel');
-  els.datasetSel = el('datasetSel');
-  els.updateBtn  = el('updateBtn');
-
-  // slider inputs + readouts
-  els.Win   = el('W_in');   els.Wval   = el('W_val');
-  els.Q2in  = el('Q2_in');  els.Q2val  = el('Q2_val');
-  els.cosin = el('cos_in'); els.cosval = el('cos_val');
-  els.phiin = el('phi_in'); els.phival = el('phi_val');
-
-  els.figDiv = el('figure');
-  els.rowsFooter = el('rowsFooter');
-
-  // y options
-  els.ySel.innerHTML = '';
-  for (const yo of Y_OPTIONS) {
-    const opt = document.createElement('option');
-    opt.value = yo.key; opt.textContent = yo.label;
-    els.ySel.appendChild(opt);
+function buildMask(ykey, fixed) {
+  const N = state.cols.w_r.length;
+  const okY = (ykey === 'delta_xsec_ratio') ? state.cols.ok_delta : state.cols.ok_asym;
+  const m = new Array(N);
+  for (let i=0;i<N;i++){
+    if (!state.cols.ok_kin[i] || !okY[i]) { m[i]=false; continue; }
+    if ('w_r' in fixed && state.cols.w_r[i] !== fixed.w_r) { m[i]=false; continue; }
+    if ('q2_r' in fixed && state.cols.q2_r[i] !== fixed.q2_r) { m[i]=false; continue; }
+    if ('ct_r' in fixed && state.cols.ct_r[i] !== fixed.ct_r) { m[i]=false; continue; }
+    if ('phi'  in fixed && state.cols.phi[i]  !== fixed.phi)  { m[i]=false; continue; }
+    m[i] = true;
   }
+  return m;
 }
 
-let SLIDERS = {}; // { W:{get,set,values}, Q2:{...}, cos:{...}, phi:{...} }
+// Count distinct x values per overlay value (coverage)
+function coverage(ykey, xvar, overlay, fixed) {
+  const xcol = VARCOL[xvar];
+  const overCol = VARCOL[overlay];
+  const mask = buildMask(ykey, fixed);
+  const sets = new Map();
+  const N = state.cols.w_r.length;
 
-function buildSliders() {
-  // formats
-  const fW  = (v)=>v.toFixed(3);
-  const fQ2 = (v)=>v.toFixed(3);
-  const fC  = (v)=> (Math.abs(v)<1e-6 ? '0.000' : v.toFixed(3));
-  const fP  = (v)=>v.toFixed(0);
-
-  SLIDERS.W   = makeDiscreteSlider(AX_UNIQUE.W,   els.Win,   els.Wval,   fW);
-  SLIDERS.Q2  = makeDiscreteSlider(AX_UNIQUE.Q2,  els.Q2in,  els.Q2val,  fQ2);
-  SLIDERS.cos = makeDiscreteSlider(AX_UNIQUE.cos, els.cosin, els.cosval, fC);
-  SLIDERS.phi = makeDiscreteSlider(AX_UNIQUE.phi, els.phiin, els.phival, fP);
-
-  // default positions roughly mid-range
-  // (leave defaults as whatever sliders were initialized to)
-
-  // Hook change events for render
-  [els.Win, els.Q2in, els.cosin, els.phiin].forEach(inp => {
-    inp.addEventListener('input', () => render(false));
-  });
-}
-
-/* Disable/hide sliders for the selected x and overlay variables */
-function updateSliderEnableState() {
-  const x = els.xSel.value;
-  const ov = els.overlaySel.value;
-  const fixed = new Set(['W','Q2','cos','phi']);
-  fixed.delete(x); fixed.delete(ov);
-  const enable = { W:false, Q2:false, cos:false, phi:false };
-  for (const k of fixed) enable[k] = true;
-
-  function setState(varName, inputEl, labelEl) {
-    inputEl.disabled = !enable[varName];
-    if (enable[varName]) {
-      inputEl.classList.remove('disabled');
-      labelEl.classList.remove('disabled');
-    } else {
-      inputEl.classList.add('disabled');
-      labelEl.classList.add('disabled');
-    }
-  }
-
-  setState('W',   els.Win,   el('W_lbl'));
-  setState('Q2',  els.Q2in,  el('Q2_lbl'));
-  setState('cos', els.cosin, el('cos_lbl'));
-  setState('phi', els.phiin, el('phi_lbl'));
-}
-
-// Keep overlay dropdown from matching x
-function refreshOverlayOptions() {
-  const x = els.xSel.value;
-  const keep = ['W','Q2','cos','phi'].filter(v => v !== x);
-  const current = els.overlaySel.value;
-  els.overlaySel.innerHTML = '';
-  for (const v of keep) {
-    const opt = document.createElement('option');
-    opt.value = v; opt.textContent = v;
-    els.overlaySel.appendChild(opt);
-  }
-  if (keep.includes(current)) els.overlaySel.value = current;
-}
-
-/* -----------------------
-   Plot + data selection
------------------------- */
-function currentSelection() {
-  // pick y
-  const ykey = els.ySel.value; // delta_xsec_ratio | A_ratio
-
-  // base filter: ok_kin + ok_delta/asym
-  const okKin   = TABLE.getChild('ok_kin');
-  const okDelta = TABLE.getChild('ok_delta');
-  const okAsym  = TABLE.getChild('ok_asym');
-
-  const yOk = (ykey === 'delta_xsec_ratio') ? okDelta : okAsym;
-
-  // fixed variables are those NOT equal to x or overlay
-  const x = els.xSel.value;           // 'W'|'Q2'|'cos'|'phi'
-  const overlay = els.overlaySel.value;
-  const fixed = ['W','Q2','cos','phi'].filter(v => v !== x && v !== overlay);
-
-  // fixed values from sliders (discrete)
-  const fixVals = {};
-  for (const v of fixed) fixVals[v] = SLIDERS[v].get();
-
-  // Build arrays
-  const cols = {
-    x:  VARCOL[x],
-    ov: VARCOL[overlay],
-    W:  'w_r',  Q2: 'q2_r',  cos: 'ct_r',  phi: 'phi_deg',
-    y:  ykey
-  };
-
-  const N = TABLE.length;
-  const xa = toArray(TABLE.getChild(cols.x), 'xcol');
-  const ova= toArray(TABLE.getChild(cols.ov), 'ovcol');
-  const ya = toArray(TABLE.getChild(cols.y), 'ycol');
-  const Wa = toArray(TABLE.getChild('w_r'), 'w_r');
-  const Q2a= toArray(TABLE.getChild('q2_r'),'q2_r');
-  const Ca = toArray(TABLE.getChild('ct_r'), 'ct_r');
-  const Pa = toArray(TABLE.getChild('phi_deg'),'phi_deg');
-
-  // mask by ok + fixed matches
-  const mask = new Array(N);
-  for (let i = 0; i < N; i++) {
-    const ok = okKin.get(i) && yOk.get(i);
-    if (!ok) { mask[i] = false; continue; }
-    // test fixed equality; phi is rounded to 0.5 deg bins in UI, but data are exact -> use numeric equality on stored (rounded) columns
-    let keep = true;
-    for (const v of fixed) {
-      const col = v==='W' ? Wa : v==='Q2' ? Q2a : v==='cos' ? Ca : Pa;
-      if (col[i] !== fixVals[v]) { keep = false; break; }
-    }
-    mask[i] = keep;
-  }
-
-  // collect unique overlay values present in the masked set, sorted by coverage (count of unique x points)
-  const byOv = new Map(); // ovVal -> Map(xVal -> yVal)
-  for (let i = 0; i < N; i++) {
+  for (let i=0;i<N;i++){
     if (!mask[i]) continue;
-    const ovVal = ova[i];
-    const xVal  = xa[i];
-    const yVal  = ya[i];
-    if (!Number.isFinite(ovVal) || !Number.isFinite(xVal) || !Number.isFinite(yVal)) continue;
-    if (!byOv.has(ovVal)) byOv.set(ovVal, new Map());
-    byOv.get(ovVal).set(xVal, yVal);
+    const ov = (overCol==='phi') ? state.cols.phi[i] : state.cols[overCol][i];
+    const xv = state.cols[xcol][i];
+    if (!Number.isFinite(ov) || !Number.isFinite(xv)) continue;
+    if (!sets.has(ov)) sets.set(ov, new Set());
+    sets.get(ov).add(xv);
   }
-  // turn to sorted traces by coverage then numeric ov
-  const traces = [];
-  for (const [ovVal, mp] of byOv.entries()) {
-    const xs = Array.from(mp.keys()).sort((a,b)=>a-b);
-    const ys = xs.map(xv => mp.get(xv));
-    traces.push({ ovVal, xs, ys, n: xs.length });
-  }
-  traces.sort((a,b) => (b.n - a.n) || (a.ovVal - b.ovVal));
 
-  return { traces, x, overlay, fixed, fixVals, ykey };
+  // Build sorted list (most points first)
+  const items = Array.from(sets.entries())
+    .map(([ov, set]) => ({ov, n: set.size}))
+    .filter(o => o.n >= 4)
+    .sort((a,b) => (b.n - a.n) || (a.ov - b.ov));
+  return items;
 }
 
-function yLabelMath(ykey) {
-  const found = Y_OPTIONS.find(o => o.key === ykey);
-  return found ? found.math : '';
+function buildCurve(ykey, xvar, fixed) {
+  const xcol = VARCOL[xvar];
+  const mask = buildMask(ykey, fixed);
+  const N = state.cols.w_r.length;
+  const xs = [], ys = [];
+  for (let i=0;i<N;i++){
+    if (!mask[i]) continue;
+    const xv = state.cols[xcol][i];
+    const yv = (ykey==='delta_xsec_ratio') ? state.cols.delta[i] : state.cols.A_ratio[i];
+    if (Number.isFinite(xv) && Number.isFinite(yv)) { xs.push(xv); ys.push(yv); }
+  }
+  // sort by x
+  const idx = xs.map((v, i) => i).sort((a,b)=>xs[a]-xs[b]);
+  return { x: idx.map(i=>xs[i]), y: idx.map(i=>ys[i]) };
 }
 
-function render(reflowTitle=true) {
-  try {
-    updateSliderEnableState();
+function snapSelectionToValues() {
+  // Initialize sliders based on dataset values
+  setSliderFromValues('W',   state.vals.W,   3);
+  setSliderFromValues('Q2',  state.vals.Q2,  3);
+  setSliderFromValues('cos', state.vals.cos, 3);
+  setSliderFromValues('phi', state.vals.phi, 0);
 
-    const { traces, x, overlay, fixed, fixVals, ykey } = currentSelection();
+  // Pick medians for a reasonable starting point
+  setSliderValue('W',   state.vals.W,   Math.floor(state.vals.W.length/2));
+  setSliderValue('Q2',  state.vals.Q2,  Math.floor(state.vals.Q2.length/2));
+  setSliderValue('cos', state.vals.cos, Math.floor(state.vals.cos.length/2));
+  setSliderValue('phi', state.vals.phi, Math.floor(state.vals.phi.length/2));
+}
 
-    // plotly traces
-    const pltTraces = [];
-    const maxTraces = 8;
-    for (let i = 0; i < Math.min(maxTraces, traces.length); i++) {
-      const t = traces[i];
-      pltTraces.push({
-        x: t.xs,
-        y: t.ys,
-        mode: 'lines+markers',
-        name: overlay + '=' + (overlay==='W' ? t.ovVal.toFixed(3)
-                                   : overlay==='Q2' ? t.ovVal.toFixed(3)
-                                   : overlay==='cos'? t.ovVal.toFixed(3)
-                                   : t.ovVal.toFixed(0)),
-        line: { width: 2, color: OKABE_ITO[i % OKABE_ITO.length], dash: DASHES[i % DASHES.length] },
-        marker: { size: 6, color: OKABE_ITO[i % OKABE_ITO.length] }
-      });
+function updateDisabledSliders() {
+  const { x, overlay } = state.chosen;
+  // Disable x and overlay sliders, enable the other two
+  const all = ['W','Q2','cos','phi'];
+  for (const w of all) {
+    const disable = (w === x) || (w === overlay);
+    toggleDisabled(w, disable);
+  }
+}
+
+function readFixedFromSliders(xvar, overlay) {
+  const fixed = {};
+  const dims = ['W','Q2','cos','phi'];
+  for (const d of dims) {
+    if (d === xvar || d === overlay) continue;
+    const val = readSliderValue(d, state.vals[d]);
+    if (Number.isFinite(val)) {
+      if (d === 'phi') fixed['phi'] = val;
+      else fixed[VARCOL[d]] = val;
     }
+  }
+  return fixed;
+}
 
-    // title text (plain, but with MathJax y-axis)
-    const fixedTxt = fixed.map(v => {
-      const val = fixVals[v];
-      if (v === 'phi') return `φ*=${val.toFixed(0)}°`;
-      if (v === 'cos') return `cosθ*=${val.toFixed(3)}`;
-      if (v === 'W')   return `W=${val.toFixed(3)} GeV`;
-      if (v === 'Q2')  return `Q²=${val.toFixed(3)} GeV²`;
-      return `${v}=${val}`;
-    }).join(', ');
+function draw() {
+  const xvar = state.chosen.x;
+  const overlay = state.chosen.overlay;
+  const ykey = state.chosen.y;
 
-    const title = `${Y_OPTIONS.find(o=>o.key===ykey).label} vs ${VARLABEL[x]}  |  fixed: ${fixedTxt}`;
+  if (xvar === overlay) {
+    Plotly.purge('plot');
+    $('meta').textContent = 'Overlay must differ from x.';
+    return;
+  }
 
-    const layout = {
-      template: 'plotly_white',
-      title: { text: title, x: 0, xanchor: 'left', pad: { b: 24 } },  // <-- more space under the title
-      margin: { t: 80, r: 30, b: 50, l: 60 },
-      xaxis: { title: VARLABEL[x], zeroline: false },
-      yaxis: { title: { text: '$' + yLabelMath(ykey) + '$' } },       // MathJax
-      legend: {
-        orientation: 'h',
-        yanchor: 'top',
-        y: 0.96,                 // sit below the (now padded) title
-        xanchor: 'left',
-        x: 0
-      }
-    };
+  const fixed = readFixedFromSliders(xvar, overlay);
+  const cov = coverage(ykey, xvar, overlay, fixed);
+  const pick = cov.slice(0, 8).map(o => o.ov);
 
-    Plotly.react(els.figDiv, pltTraces, layout, {responsive: true, displaylogo: false});
+  const data = [];
+  const yArrays = [];
 
-    // footer counts
-    const dedupRows = META?.counts?.dedup_rows ?? 0;
-    const sampleRows = META?.counts?.sample_rows ?? 0;
-    els.rowsFooter.textContent = `rows (dedup): ${dedupRows.toLocaleString()} • sample: ${sampleRows.toLocaleString()}`;
+  pick.forEach((ov, i) => {
+    const f = { ...fixed };
+    if (overlay === 'phi') f['phi'] = ov;
+    else f[VARCOL[overlay]] = ov;
 
-  } catch (e) {
-    console.error(e);
-    els.figDiv.innerHTML = `<div style="color:#b00020">Error: ${e.message}</div>`;
+    const { x, y } = buildCurve(ykey, xvar, f);
+    if (!x.length) return;
+    yArrays.push(...y);
+
+    data.push({
+      x, y,
+      mode: 'lines+markers',
+      name: `${overlay}=${overlay==='W' ? fmt(ov,3) : (overlay==='phi' ? fmt(ov,0) : fmt(ov,3))}`,
+      line: { color: COLORS[i % COLORS.length], width: 2, dash: DASHES[i % DASHES.length] },
+      marker: { size: 6 }
+    });
+  });
+
+  const xlab = LABELS[xvar];
+  const ylab = yAxisLabel(ykey);
+  const fixedStr = Object.entries(fixed).map(([k,v]) => {
+    if (k === 'phi') return `φ*=${fmt(v,0)}°`;
+    if (k === 'ct_r') return `cosθ*=${fmt(v,3)}`;
+    if (k === 'w_r')  return `W=${fmt(v,3)} GeV`;
+    if (k === 'q2_r') return `Q²=${fmt(v,3)} GeV²`;
+    return `${k}=${fmt(v,3)}`;
+  }).join(', ');
+
+  const title = `${ylab} vs ${xlab}  |  fixed: ${fixedStr}`;
+  const layout = {
+    template: 'plotly_white',
+    title: { text: title, y: 0.98, x: 0, xanchor: 'left' },
+    margin: { t: 90, r: 20, b: 60, l: 60 },
+    xaxis: { title: xlab },
+    yaxis: { title: { text: ylab } },
+    legend: { orientation: 'h', x: 0, y: 1.02, xanchor: 'left', yanchor: 'bottom' }
+  };
+
+  Plotly.newPlot('plot', data, layout, {responsive:true, displaylogo:false});
+  $('meta').textContent = `rows (dedup): ${(state.cols.w_r||[]).length.toLocaleString()} • sample: ${state.chosen.dataset==='sample' ? 'yes' : 'no'}`;
+}
+
+async function main() {
+  try {
+    // Wire dropdowns + button
+    $('y').addEventListener('change', e => { state.chosen.y = e.target.value; });
+    $('x').addEventListener('change', e => { state.chosen.x = e.target.value; updateDisabledSliders(); });
+    $('overlay').addEventListener('change', e => { state.chosen.overlay = e.target.value; updateDisabledSliders(); });
+    $('dataset').addEventListener('change', async (e) => {
+      state.chosen.dataset = e.target.value;
+      await loadFeather(state.chosen.dataset);
+      snapSelectionToValues();
+      updateDisabledSliders();
+      draw();
+    });
+
+    // Slider labels update live
+    ['W','Q2','cos','phi'].forEach(dim => {
+      $(dim).addEventListener('input', () => {
+        const arr = state.vals[dim];
+        setSliderValue(dim, arr, parseInt($(dim).value||"0",10));
+      });
+    });
+
+    $('update').addEventListener('click', draw);
+
+    // Initial load
+    state.chosen.dataset = $('dataset').value;
+    state.chosen.y = $('y').value;
+    state.chosen.x = $('x').value;
+    state.chosen.overlay = $('overlay').value;
+
+    await loadFeather(state.chosen.dataset);
+    snapSelectionToValues();
+    updateDisabledSliders();
+    draw();
+  } catch (err) {
+    console.error(err);
+    Plotly.purge('plot');
+    $('meta').textContent = `Error: ${err.message}`;
   }
 }
 
-/* -----------------------
-   Boot
------------------------- */
-function main() {
-  initElements();
-
-  // dataset switch
-  els.datasetSel.addEventListener('change', () => {
-    materialize(els.datasetSel.value.includes('full') ? 'full' : 'sample')
-      .catch(e => {
-        console.error(e);
-        els.figDiv.innerHTML = `<div style="color:#b00020">Error: ${e.message}</div>`;
-      });
-  });
-
-  // x changes → keep overlay ≠ x, and refresh slider state
-  els.xSel.addEventListener('change', () => {
-    refreshOverlayOptions();
-    updateSliderEnableState();
-    render();
-  });
-
-  // overlay changes → just update slider state and plot
-  els.overlaySel.addEventListener('change', () => {
-    updateSliderEnableState();
-    render();
-  });
-
-  els.ySel.addEventListener('change', () => render());
-  els.updateBtn.addEventListener('click', () => render());
-
-  // initial
-  refreshOverlayOptions();
-  updateSliderEnableState();
-  materialize(els.datasetSel.value.includes('full') ? 'full' : 'sample')
-    .catch(e => {
-      console.error(e);
-      els.figDiv.innerHTML = `<div style="color:#b00020">Error: ${e.message}</div>`;
-    });
-}
-
-document.addEventListener('DOMContentLoaded', main);
+main();
