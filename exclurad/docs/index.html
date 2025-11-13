@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EXCLURAD Interactive RC Explorer</title>
+
+<!-- Plotly (global) -->
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<!-- Apache Arrow (ESM) to read Feather in browser -->
+<script type="module" src="https://cdn.jsdelivr.net/npm/apache-arrow@14.0.2/+esm"></script>
+
+<style>
+  :root { --gap: 10px; --fg:#222; --muted:#666; --brand:#0072B2; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+         margin: 16px; color: var(--fg); }
+  h1 { font-size: 1.15rem; margin: 0 0 8px; font-weight: 600; }
+  .row { display: flex; flex-wrap: wrap; gap: var(--gap); align-items: center; }
+  .ctrl { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl label { font-size: .85rem; color: var(--muted); }
+  select, input[type="number"], input[type="text"] {
+    padding: 6px 8px; border:1px solid #ccc; border-radius:6px; min-width: 140px;
+  }
+  .slider-wrap { display:flex; align-items:center; gap: 8px; }
+  input[type="range"]{ width: 260px; }
+  #plot { width: 100%; height: 600px; }
+  .small { font-size: .85rem; color: var(--muted); }
+  .badge { padding: 2px 6px; border-radius: 10px; background:#eee; }
+  .spacer { flex: 1 1 auto; }
+  .btn {
+    padding: 8px 12px; border-radius:8px; border:1px solid #ccc; background:#f9f9f9;
+    cursor: pointer; font-weight:600;
+  }
+  .btn.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .info { margin-top: 6px; }
+</style>
+</head>
+
+<body>
+  <h1>EXCLURAD Interactive RC Explorer</h1>
+  <div class="small info">
+    <span class="badge">δ ≡ σ<sub>obs</sub>/σ<sub>0</sub></span>
+    · Choose x, y, and an overlay variable. Set the other two via sliders.
+  </div>
+
+  <!-- Controls row 1 -->
+  <div class="row" style="margin-top:10px">
+    <div class="ctrl">
+      <label for="x">x:</label>
+      <select id="x">
+        <option value="W" selected>W</option>
+        <option value="Q2">Q²</option>
+        <option value="cos">cosθ*</option>
+        <option value="phi">φ* [deg]</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label for="y">y:</label>
+      <select id="y">
+        <option value="delta_xsec_ratio" selected>δ = σ_obs/σ₀</option>
+        <option value="A_ratio">A_RC / A_Born</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label for="overlay">overlay:</label>
+      <select id="overlay">
+        <option value="Q2" selected>Q²</option>
+        <option value="W">W</option>
+        <option value="cos">cosθ*</option>
+        <option value="phi">φ* [deg]</option>
+      </select>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="ctrl">
+      <label>&nbsp;</label>
+      <button class="btn primary" id="update">Update</button>
+    </div>
+
+    <div class="ctrl">
+      <label for="useFull">dataset:</label>
+      <select id="useFull">
+        <option value="sample" selected>Sample (fast)</option>
+        <option value="full">Full (larger)</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Controls row 2: sliders -->
+  <div class="row" style="margin-top:8px">
+    <div class="ctrl" style="min-width:330px">
+      <label>W [GeV]: <span id="W_val" class="badge"></span></label>
+      <div class="slider-wrap">
+        <input type="range" id="W_slider" min="0" max="0" step="1" value="0">
+        <input type="number" id="W_box" step="0.001" style="width:100px">
+      </div>
+    </div>
+    <div class="ctrl" style="min-width:330px">
+      <label>Q² [GeV²]: <span id="Q2_val" class="badge"></span></label>
+      <div class="slider-wrap">
+        <input type="range" id="Q2_slider" min="0" max="0" step="1" value="0">
+        <input type="number" id="Q2_box" step="0.001" style="width:100px">
+      </div>
+    </div>
+    <div class="ctrl" style="min-width:300px">
+      <label>cosθ*: <span id="cos_val" class="badge"></span></label>
+      <div class="slider-wrap">
+        <input type="range" id="cos_slider" min="0" max="0" step="1" value="0">
+        <input type="number" id="cos_box" step="0.001" style="width:100px">
+      </div>
+    </div>
+    <div class="ctrl" style="min-width:300px">
+      <label>φ* [deg]: <span id="phi_val" class="badge"></span></label>
+      <div class="slider-wrap">
+        <input type="range" id="phi_slider" min="0" max="0" step="1" value="0">
+        <input type="number" id="phi_box" step="1" style="width:100px">
+      </div>
+    </div>
+  </div>
+
+  <div id="plot"></div>
+
+  <div class="small" style="margin-top:6px">
+    Definitions match Afanasev <em>et&nbsp;al.</em> (2002); see Phys. Rev. D&nbsp;66, 074004. :contentReference[oaicite:1]{index=1}
+  </div>
+
+<script type="module">
+  import { tableFromIPC } from "https://cdn.jsdelivr.net/npm/apache-arrow@14.0.2/+esm";
+
+  // --------- Config ---------
+  const DATA = {
+    sample: "data/exclurad_eta_web_sample.feather",
+    full:   "data/exclurad_eta_web.feather"  // include only if you added it
+  };
+
+  // Color-blind friendly palette + dashes + markers
+  const COLORS = ["#0072B2","#D55E00","#009E73","#CC79A7","#E69F00","#56B4E9","#000000","#F0E442"];
+  const DASHES = ["solid","dash","dot","dashdot","longdash","longdashdot"];
+  const MARKERS= ["circle","square","diamond","cross","triangle-up","triangle-down","x","star"];
+
+  // Column names in Feather
+  const COL = { W:"w_r", Q2:"q2_r", cos:"ct_r", phi:"phi_deg",
+                delta:"delta_xsec_ratio", Aratio:"A_ratio",
+                ok_kin:"ok_kin", ok_delta:"ok_delta", ok_asym:"ok_asym" };
+
+  // UI elements
+  const el = id => document.getElementById(id);
+  const xSel = el('x'), ySel = el('y'), overlaySel = el('overlay');
+  const useFullSel = el('useFull');
+  const Wslider = el('W_slider'), Q2slider = el('Q2_slider'), cosSlider = el('cos_slider'), phiSlider = el('phi_slider');
+  const Wbox = el('W_box'), Q2box = el('Q2_box'), cosBox = el('cos_box'), phiBox = el('phi_box');
+  const Wval = el('W_val'), Q2val = el('Q2_val'), cosVal = el('cos_val'), phiVal = el('phi_val');
+  const updateBtn = el('update');
+
+  // State
+  let table = null;
+  let arrays = {}; // typed arrays by column
+  let uniq = {};   // unique sorted values for slider binding
+
+  // --------- Utils ---------
+  function getColumn(table, name) {
+    const idx = table.schema.fields.findIndex(f => f.name === name);
+    return table.getChildAt(idx).toArray();
+  }
+  function distinctSorted(typed) {
+    const set = new Set(typed);
+    const arr = Array.from(set);
+    arr.sort((a,b) => a-b);
+    return arr;
+  }
+  function bindSlider(slider, box, label, values) {
+    // slider indexes into 'values'
+    slider.min = "0"; slider.max = String(Math.max(0, values.length-1)); slider.step = "1";
+    // initialize to the value closest to the median
+    const mid = Math.floor(values.length/2);
+    slider.value = String(mid);
+    box.value = values[mid];
+    label.textContent = fmt(values[mid]);
+    slider.oninput = () => {
+      const v = values[Number(slider.value)];
+      box.value = v;
+      label.textContent = fmt(v);
+    };
+    box.onchange = () => {
+      // snap to nearest valid
+      const target = Number(box.value);
+      const i = nearestIndex(values, target);
+      slider.value = String(i);
+      box.value = values[i];
+      label.textContent = fmt(values[i]);
+    };
+  }
+  function nearestIndex(values, v) {
+    let best = 0, bestd = Infinity;
+    for (let i=0; i<values.length; i++) {
+      const d = Math.abs(values[i] - v);
+      if (d < bestd) { bestd = d; best = i; }
+    }
+    return best;
+  }
+  function fmt(v) {
+    // heuristics for display
+    if (Math.abs(v) >= 10) return v.toFixed(2);
+    if (Math.abs(v) >= 1)  return v.toFixed(3);
+    return v.toFixed(4);
+  }
+
+  // --------- Data loading ---------
+  async function loadFeather(which="sample") {
+    const url = DATA[which];
+    const buf = await (await fetch(url)).arrayBuffer();
+    table = tableFromIPC(new Uint8Array(buf));
+
+    arrays = {
+      w:   getColumn(table, COL.W),
+      q2:  getColumn(table, COL.Q2),
+      ct:  getColumn(table, COL.cos),
+      phi: getColumn(table, COL.phi),
+      delta:  getColumn(table, COL.delta),
+      Aratio: getColumn(table, COL.Aratio),
+      ok_kin:   getColumn(table, COL.ok_kin),
+      ok_delta: getColumn(table, COL.ok_delta),
+      ok_asym:  getColumn(table, COL.ok_asym),
+    };
+    uniq = {
+      W:   distinctSorted(arrays.w),
+      Q2:  distinctSorted(arrays.q2),
+      cos: distinctSorted(arrays.ct),
+      phi: distinctSorted(arrays.phi),
+    };
+
+    // Bind sliders to legal values
+    bindSlider(Wslider,  Wbox,  Wval,  uniq.W);
+    bindSlider(Q2slider, Q2box, Q2val, uniq.Q2);
+    bindSlider(cosSlider,cosBox, cosVal, uniq.cos);
+    bindSlider(phiSlider,phiBox, phiVal, uniq.phi);
+  }
+
+  // --------- Coverage and curves ---------
+  const VARCOL = { W:"w", Q2:"q2", cos:"ct", phi:"phi" };
+  function maskForY(ycol) {
+    const ok = arrays.ok_kin;
+    if (ycol === 'delta_xsec_ratio') {
+      const okd = arrays.ok_delta;
+      return (i) => ok[i] && okd[i] && Number.isFinite(arrays.delta[i]);
+    } else {
+      const oka = arrays.ok_asym;
+      return (i) => ok[i] && oka[i] && Number.isFinite(arrays.Aratio[i]);
+    }
+  }
+  function countCoverage(ycol, xvar, fixed, overlayVar) {
+    const counts = new Map();
+    const M = maskForY(ycol);
+    const n = arrays.w.length;
+    const xA = arrays[VARCOL[xvar]];
+    for (let i=0; i<n; i++) {
+      if (!M(i)) continue;
+      // enforce fixed constraints
+      if (fixed.W  !== null && arrays.w[i]  !== fixed.W)  continue;
+      if (fixed.Q2 !== null && arrays.q2[i] !== fixed.Q2) continue;
+      if (fixed.cos!== null && arrays.ct[i] !== fixed.cos)continue;
+      if (fixed.phi!== null && arrays.phi[i]!== fixed.phi)continue;
+      const ov = arrays[VARCOL[overlayVar]][i];
+      if (!Number.isFinite(xA[i])) continue;
+      const key = ov;
+      const c = counts.get(key) || 0;
+      counts.set(key, c+1);
+    }
+    return counts; // Map(value -> npoints)
+  }
+
+  function buildCurve(ycol, xvar, fixed, overlayValue) {
+    // collect and sort by x
+    const n = arrays.w.length;
+    const X = arrays[VARCOL[xvar]];
+    const Y = (ycol === 'delta_xsec_ratio') ? arrays.delta : arrays.Aratio;
+    const M = maskForY(ycol);
+    const pts = [];
+    for (let i=0; i<n; i++) {
+      if (!M(i)) continue;
+      if (fixed.W  !== null && arrays.w[i]  !== fixed.W)  continue;
+      if (fixed.Q2 !== null && arrays.q2[i] !== fixed.Q2) continue;
+      if (fixed.cos!== null && arrays.ct[i] !== fixed.cos)continue;
+      if (fixed.phi!== null && arrays.phi[i]!== fixed.phi)continue;
+      if (arrays[VARCOL[overlayValue.var]][i] !== overlayValue.val) continue;
+      const xv = X[i], yv = Y[i];
+      if (Number.isFinite(xv) && Number.isFinite(yv)) pts.push([xv, yv]);
+    }
+    pts.sort((a,b)=>a[0]-b[0]);
+    return {x: pts.map(p=>p[0]), y: pts.map(p=>p[1])};
+  }
+
+  // --------- Plot ---------
+  function labelFor(varname, val) {
+    if (varname === 'W')  return `W=${val.toFixed(3)} GeV`;
+    if (varname === 'Q2') return `Q²=${val.toFixed(3)} GeV²`;
+    if (varname === 'cos')return `cosθ*=${val.toFixed(3)}`;
+    return `φ*=${val.toFixed(0)}°`;
+  }
+  function axisLabel(varname) {
+    return {W:"W [GeV]", Q2:"Q² [GeV²]", cos:"cosθ*", phi:"φ* [deg]"}[varname];
+  }
+
+  function draw() {
+    const xvar = xSel.value;
+    const ycol = ySel.value; // 'delta_xsec_ratio' or 'A_ratio'
+    const overlay = overlaySel.value;
+
+    if (overlay === xvar) {
+      alert("Overlay must differ from x-axis.");
+      return;
+    }
+
+    // Build the 'fixed' spec: the two not used by (x, overlay)
+    const fixed = {W:null, Q2:null, cos:null, phi:null};
+    const rest = ["W","Q2","cos","phi"].filter(v => v!==xvar && v!==overlay);
+    for (const v of rest) {
+      if (v === "W")  fixed.W  = uniq.W[Number(Wslider.value)];
+      if (v === "Q2") fixed.Q2 = uniq.Q2[Number(Q2slider.value)];
+      if (v === "cos")fixed.cos= uniq.cos[Number(cosSlider.value)];
+      if (v === "phi")fixed.phi= uniq.phi[Number(phiSlider.value)];
+    }
+
+    // Select best overlay values by coverage
+    const cov = countCoverage(ycol, xvar, fixed, overlay);
+    const entries = Array.from(cov.entries())
+      .filter(([_,n]) => n >= 4) // minimum points
+      .sort((a,b)=> b[1]-a[1]);   // most points first
+    const maxTraces = 8;
+    const picked = entries.slice(0, maxTraces).map(([v,n]) => ({val:v, n}));
+
+    // Build traces
+    const traces = [];
+    for (let i=0; i<picked.length; i++) {
+      const ov = { var: overlay, val: picked[i].val };
+      const {x,y} = buildCurve(ycol, xvar, fixed, ov);
+      if (x.length < 2) continue;
+      traces.push({
+        x, y,
+        mode: 'lines+markers',
+        name: labelFor(overlay, ov.val),
+        line: { width: 2, color: COLORS[i % COLORS.length], dash: DASHES[i % DASHES.length] },
+        marker: { size: 6, symbol: MARKERS[i % MARKERS.length] }
+      });
+    }
+
+    const yLabel = (ycol === 'delta_xsec_ratio') ? 'δ = σ_obs/σ₀' : 'A_RC / A_Born';
+    const titleFixed =
+      rest.map(v => labelFor(v, fixed[v])).join(', ');
+    const layout = {
+      title: `${yLabel} vs ${axisLabel(xvar)}  |  fixed: ${titleFixed}`,
+      xaxis: { title: axisLabel(xvar), zeroline:false, gridcolor:'#eee' },
+      yaxis: { title: yLabel, gridcolor:'#eee' },
+      legend: { orientation: "h", y: 1.1 },
+      margin: { t:60, r:20, b:50, l:60 },
+      template: 'plotly_white',
+      height: 600
+    };
+
+    Plotly.react('plot', traces, layout, {responsive:true});
+  }
+
+  // --------- Wire up ---------
+  updateBtn.onclick = draw;
+  xSel.onchange = draw;
+  ySel.onchange = draw;
+  overlaySel.onchange = draw;
+  [Wslider,Q2slider,cosSlider,phiSlider].forEach(s => s.onchange = draw);
+
+  useFullSel.onchange = async () => {
+    await loadFeather(useFullSel.value);
+    draw();
+  };
+
+  // Initial load (sample)
+  (async function init() {
+    await loadFeather('sample');
+    draw();
+  })();
+
+</script>
+</body>
+</html>
+
