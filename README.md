@@ -223,4 +223,4 @@ pion code to support η electroproduction:
 The pion tables (`maid07-NPpi.tbl`, `maid98-PNpi.tbl`, `maid98-PPpi.tbl`)
 are no longer included; this repository targets η production only.
 The original pion version remains available at the
-[JLab RC page](https://www.jlab.org/RC/).
+[JLab RC page](https://www.jlab.org/RC/) and [Exclurad Pion Github Repo]([https://www.jlab.org/RC/](https://github.com/JeffersonLab/exclurad/tree/main)).
