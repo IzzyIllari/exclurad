@@ -32,7 +32,7 @@ Original pion code:
 η-meson extension (2025):
 
 > I. Illari, A. Afanasev, V. Kashevarov, I. Strakovsky,  
-> *Radiative Corrections to Exclusive η Electroproduction at CLAS12*,  
+> *Amplitude-Based Analysis of QED Radiative Corrections to Electroproduction of η-Mesons*,  
 > in preparation.
 
 ---
