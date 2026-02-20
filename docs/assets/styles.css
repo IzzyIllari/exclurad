@@ -11,7 +11,7 @@ html, body {
 .page { margin: 16px auto; max-width: var(--maxw); padding: 0 10px; }
 
 header h1 { margin: 0 0 6px 0; font-size: 1.4rem; }
-header .sub { margin: 0 0 12px 0; color: #555; }
+header .sub { margin: 0 0 12px 0; color: #555; line-height: 1.5; }
 
 .controls .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .controls label { font-weight: 600; }
@@ -25,11 +25,53 @@ header .sub { margin: 0 0 12px 0; color: #555; }
 .slider-block.disabled { opacity: 0.45; }
 
 .plot-wrap { margin-top: 8px; }
-#plot { height: 680px; }              /* comfortable height */
+#plot { height: 680px; }
 .meta { margin: 6px 0 0 0; color: #555; font-size: 0.85rem; }
 
 .btn { background: #0b5cff; border: none; color: #fff; border-radius: 6px; cursor: pointer; }
 .btn:hover { filter: brightness(0.95); }
+
+/* Dataset info table */
+.dataset-info {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid #ddd;
+}
+
+.dataset-info h2 {
+  font-size: 1.05rem;
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.dataset-info table {
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  width: auto;
+}
+
+.dataset-info td {
+  padding: 4px 16px 4px 0;
+  vertical-align: top;
+}
+
+.dataset-info td:first-child {
+  font-weight: 600;
+  color: #444;
+  white-space: nowrap;
+}
+
+.dataset-info tr:not(:last-child) td {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dataset-note {
+  margin: 12px 0 0 0;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.dataset-note a { color: #0b5cff; }
 
 /* Give the plot extra space on top so legend has room below the title */
 .js-plotly-plot .plotly .main-svg { overflow: visible; }

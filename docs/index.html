@@ -15,7 +15,12 @@
   <div class="page">
     <header>
       <h1>EXCLURAD Interactive RC Explorer</h1>
-      <p class="sub">Choose axes and overlay; snap fixed kinematics to values present in the dataset.</p>
+      <p class="sub">
+        η-meson electroproduction (ep → e'pη) at CLAS12 (E<sub>beam</sub> = 6.53 GeV).
+        Radiative corrections computed with full O(α) corrections (rc_mode = 0),
+        EtaMAID-2023 hadronic model, ν<sub>cut</sub> = 0.166 GeV².
+        Choose axes and overlay variable; sliders snap to values present in the dataset.
+      </p>
     </header>
 
     <!-- Top controls -->
@@ -86,6 +91,32 @@
     <section class="plot-wrap">
       <div id="plot"></div>
       <div id="meta" class="meta"></div>
+    </section>
+
+    <!-- Dataset info -->
+    <section class="dataset-info">
+      <h2>Dataset</h2>
+      <table>
+        <tbody>
+          <tr><td>Reaction</td><td>ep → e'pη (η-meson electroproduction)</td></tr>
+          <tr><td>Beam energy</td><td>6.53 GeV (CLAS12)</td></tr>
+          <tr><td>RC calculation</td><td>Full O(α), rc_mode = 0 (Bardin–Shumeiko method)</td></tr>
+          <tr><td>Hadronic model</td><td>EtaMAID-2023</td></tr>
+          <tr><td>ν<sub>cut</sub></td><td>0.166 GeV²</td></tr>
+          <tr><td>W range</td><td>1.487 – 1.999 GeV (η+p threshold to ~2 GeV)</td></tr>
+          <tr><td>Q² range</td><td>0.30 – 4.00 GeV²</td></tr>
+          <tr><td>cos θ* range</td><td>−0.900 – +0.900</td></tr>
+          <tr><td>φ* range</td><td>0° – 360° (bin-centers, 30 steps)</td></tr>
+          <tr><td>Full dataset rows</td><td>264,980</td></tr>
+          <tr><td>Sample dataset rows</td><td>50,000</td></tr>
+        </tbody>
+      </table>
+      <p class="dataset-note">
+        Source code and input generation scripts:
+        <a href="https://github.com/IzzyIllari/exclurad" target="_blank">github.com/IzzyIllari/exclurad</a>.
+        Reference: Afanasev, Akushevich, Burkert, Joo,
+        <a href="https://arxiv.org/abs/hep-ph/0208183" target="_blank">Phys. Rev. D 66, 074004 (2002)</a>.
+      </p>
     </section>
   </div>
 

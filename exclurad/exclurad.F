@@ -1,5 +1,5 @@
       program exclurad
-c	latest update: Jan.7, 2003
+c	latest update: Feb.2, 2024
 c      version 1.1  December 31, 2000
 c
 c      Andrei Afanasev	 afanas@jlab.org
