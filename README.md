@@ -31,7 +31,7 @@ Original pion code:
 
 η-meson extension (2025):
 
-> I. Illari, A. Afanasev, V. Kashevarov, I. Strakovsky,  
+> I. Illari, A. Afanasev, W.J. Briscoe, V.L. Kashevarov, A. Schmidt, I. Strakovsky,  
 > *Amplitude-Based Analysis of QED Radiative Corrections to Electroproduction of η-Mesons*,  
 > in preparation.
 
