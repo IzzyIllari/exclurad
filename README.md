@@ -31,8 +31,8 @@ Original pion code:
 
 η-meson extension (2025):
 
-> I. Illari, A. Afanasev, V. Kashevarov, I. Strakovsky,  
-> *Radiative Corrections to Exclusive η Electroproduction at CLAS12*,  
+> I. Illari, A. Afanasev, W.J. Briscoe, V.L. Kashevarov, A. Schmidt, I. Strakovsky,  
+> *Amplitude-Based Analysis of QED Radiative Corrections to Electroproduction of η-Mesons*,  
 > in preparation.
 
 ---
@@ -223,4 +223,4 @@ pion code to support η electroproduction:
 The pion tables (`maid07-NPpi.tbl`, `maid98-PNpi.tbl`, `maid98-PPpi.tbl`)
 are no longer included; this repository targets η production only.
 The original pion version remains available at the
-[JLab RC page](https://www.jlab.org/RC/).
+[JLab RC page](https://www.jlab.org/RC/) and [Exclurad Pion Github Repo](https://github.com/JeffersonLab/exclurad/tree/main).
