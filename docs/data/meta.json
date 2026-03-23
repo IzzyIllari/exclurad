@@ -1,26 +1,54 @@
 {
   "counts": {
-    "dedup_rows": 264980,
-    "web_rows": 264980,
+    "dedup_rows": 789866,
+    "web_rows": 789866,
     "sample_rows": 50000
   },
   "columns": {
-    "w": "W [GeV]",
-    "q2": "Q^2 [GeV^2]",
-    "cscm_input": "cos(theta*)",
-    "phi_deg": "phi* [deg]",
-    "w_r": "W rounded (4dp)",
-    "q2_r": "Q^2 rounded (4dp)",
+    "w_r": "W rounded (4dp) [GeV]",
+    "q2_r": "Q^2 rounded (4dp) [GeV^2]",
     "ct_r": "cos(theta*) rounded (3dp)",
+    "phi_deg": "phi* [deg]",
     "delta_xsec_ratio": "delta = sigma_obs/sigma_0",
-    "A_born": "Born BSA",
-    "A_rc": "RC BSA",
+    "A_born": "Born BSA (fraction)",
+    "A_rc": "RC BSA (fraction)",
     "A_ratio": "A_rc/A_born",
-    "dd": "dd [%]",
-    "dd_ratio": "1+dd/100",
-    "source_label": "first|second|skim",
+    "sigma0": "Born cross section",
+    "asb": "Born BSA [%]",
+    "as_rc": "RC BSA [%]",
     "ok_kin": "valid kinematics",
     "ok_asym": "valid asymmetry",
     "ok_delta": "valid delta"
-  }
+  },
+  "kinematic_ranges": {
+    "W": [1.487, 2.000],
+    "Q2": [0.300, 5.000],
+    "cos_theta_star": [-0.900, 0.900],
+    "phi_star": [0.0, 360.0]
+  },
+  "grid_points": {
+    "W": 192,
+    "Q2": 169,
+    "cos_theta_star": 81,
+    "phi_star": 109
+  },
+  "parameters": {
+    "beam_energy_GeV": 6.53,
+    "vcut_GeV2": 0.166,
+    "rc_mode": "exact O(alpha)",
+    "hadronic_model": "EtaMAID-2023"
+  },
+  "sources": [
+    "results_Oct2025/outputs/first",
+    "results_Oct2025/outputs/second",
+    "results_Oct2025/outputs/skim",
+    "results_Oct2025/outputs/third",
+    "results_Oct2025/outputs/tests",
+    "4Mar2026/data/group1",
+    "4Mar2026/data/group2",
+    "4Mar2026/data/group3",
+    "4Mar2026/data/group4",
+    "4Mar2026/data/group5",
+    "4Mar2026/data/group6"
+  ]
 }
