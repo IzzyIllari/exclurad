@@ -1,8 +1,9 @@
 {
   "counts": {
-    "dedup_rows": 789866,
-    "web_rows": 789866,
-    "sample_rows": 50000
+    "dedup_rows": 1928199,
+    "web_rows": 1915686,
+    "sample_rows": 50000,
+    "excluded_nan_delta_rows": 12513
   },
   "columns": {
     "w_r": "W rounded (4dp) [GeV]",
@@ -21,14 +22,14 @@
     "ok_delta": "valid delta"
   },
   "kinematic_ranges": {
-    "W": [1.487, 2.000],
+    "W": [1.487, 2.2109],
     "Q2": [0.300, 5.000],
     "cos_theta_star": [-0.900, 0.900],
     "phi_star": [0.0, 360.0]
   },
   "grid_points": {
-    "W": 192,
-    "Q2": 169,
+    "W": 223,
+    "Q2": 176,
     "cos_theta_star": 81,
     "phi_star": 109
   },
@@ -38,6 +39,10 @@
     "rc_mode": "exact O(alpha)",
     "hadronic_model": "EtaMAID-2023"
   },
+  "notes": [
+    "Full production grid extended to W = 2.211 GeV (July 2026 campaign, 1,398,480 points) merged with the October 2025 and March 2026 datasets.",
+    "12,513 points with non-finite delta are excluded pending the sffun phase-space-guard repair run; they will be restored once recomputed."
+  ],
   "sources": [
     "results_Oct2025/outputs/first",
     "results_Oct2025/outputs/second",
@@ -49,6 +54,7 @@
     "4Mar2026/data/group3",
     "4Mar2026/data/group4",
     "4Mar2026/data/group5",
-    "4Mar2026/data/group6"
+    "4Mar2026/data/group6",
+    "results_W2.21/radtot_merged_W2.21.csv"
   ]
 }

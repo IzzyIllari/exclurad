@@ -29,11 +29,14 @@ Original pion code:
 > *QED Radiative Corrections in Processes of Exclusive Pion Electroproduction*,  
 > Phys. Rev. D **66**, 074004 (2002). [hep-ph/0208183](https://arxiv.org/abs/hep-ph/0208183)
 
-η-meson extension (2025):
+η-meson extension:
 
 > I. Illari, A. Afanasev, W.J. Briscoe, V.L. Kashevarov, A. Schmidt, I. Strakovsky,  
-> *Amplitude-Based Analysis of QED Radiative Corrections to Electroproduction of η-Mesons*,  
-> in preparation.
+> *Amplitude-Based Analysis of QED Radiative Corrections to Electroproduction of η-Mesons on Protons*,  
+> [arXiv:2604.22943](https://arxiv.org/abs/2604.22943),
+> [accepted in Phys. Rev. D](https://journals.aps.org/prd/accepted/10.1103/78q1-72dn) (2026).
+
+Code and data archived at [DOI 10.5281/zenodo.18970109](https://doi.org/10.5281/zenodo.18970109).
 
 ---
 
@@ -45,7 +48,9 @@ A browser-based visualisation of the η-channel radiative correction output
 **<https://izzyillari.github.io/exclurad/>**
 
 The dataset was computed with the η-channel configuration described below
-(vcut = 0.166 GeV²,  beam energy 6.53 GeV, full O(α) corrections).
+(vcut = 0.166 GeV², beam energy 6.53 GeV, full O(α) corrections) and now
+covers the full production grid: W = 1.487–2.211 GeV, Q² = 0.3–5.0 GeV²,
+cos θ* = ±0.9, full φ* range — about 1.9 million kinematic points.
 Use the sliders to fix two kinematic variables and plot curves overlaid
 by a third.
 
